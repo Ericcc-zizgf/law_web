@@ -39,6 +39,62 @@ Secrets Manager：保存研究 API 存取碼與 Gemini API Key
 
 歷史案例「相似案件比對」尚未實作為網站功能。未來應由研究 API 或獨立的雲端檢索服務提供，而不是在 Elastic Beanstalk 上執行本機 MLX 模型。
 
+## 第一步 PDF → TXT 詳細處理架構
+
+此流程只處理「歷史訴願決定書」。PDF 轉 TXT 完成後，系統才會接著建立 JSON；TXT 是兩個階段之間可檢查、可追溯的中間產物。
+
+```text
+瀏覽器：pdf_manager_ui_v6.html
+    │ 使用者選取一或多份 PDF
+    │ multipart/form-data：files[]、category=歷史訴願決定書
+    ▼
+POST /convert（legal_tool.web_app.convert_pdf）
+    │ 檢查分類與至少一份 PDF
+    ▼
+ingest_library_pdf（legal_tool.services.library_ingestion）
+    ├── 檢查副檔名必須為 .pdf
+    ├── 產生 UUID 文件 ID，例如 8d2f...a91c
+    ├── 清理 Finder「的副本」檔名，保留原始檔名於 metadata
+    ├── 先保存 PDF：uploads/<文件ID>.pdf
+    ├── 計算 SHA-256 檔案雜湊，檢查是否已經匯入過
+    │     └── 若重複：刪除剛存入的暫存 PDF，回傳 duplicate，不再轉檔
+    ▼
+extract_pdf_text（legal_tool.processing.pdf_text_utils）
+    ├── pdfplumber 逐頁執行 page.extract_text()
+    ├── 每一頁後加入空白行，避免跨頁文字黏在一起
+    └── clean_pdf_lines 清理文字雜訊
+          ├── BOM、零寬字元、(cid:數字) 字型殘留
+          ├── 網站查閱時間、URL 頁尾
+          ├── 獨立頁碼，例如 3 / 12
+          └── 連續空白行
+    ▼
+UTF-8 TXT：uploads/<文件ID>.txt
+    │
+    ├── 回傳 pdf_url、txt_url、文件 ID 與處理狀態
+    └── 下一階段：TXT → 階層式 JSON
+```
+
+### 各層職責
+
+| 層級 | 程式位置 | 負責內容 |
+|---|---|---|
+| 前端 | `frontend/pages/pdf_manager_ui_v6.html` | 選檔、上傳進度與顯示轉換結果 |
+| HTTP 路由 | `legal_tool/web_app.py` 的 `/convert` | 接收檔案、呼叫匯入服務、回傳 JSON 結果 |
+| 匯入服務 | `legal_tool/services/library_ingestion.py` | UUID、檔名整理、重複檔案檢查、檔案保存與後續 JSON 建立 |
+| PDF 文字處理 | `legal_tool/processing/pdf_text_utils.py` | 逐頁擷取與雜訊清理 |
+| 保存位置 | `UPLOAD_DIR` | 本機為 `uploads/`；AWS 設定 EFS 後為 `/mnt/efs/legal-demo/uploads/` |
+
+### 轉換成功、重複與失敗
+
+| 狀態 | 意義 | 系統行為 |
+|---|---|---|
+| `completed` | PDF 已成功擷取為 TXT | 保存 PDF、TXT，並繼續建立 JSON |
+| `duplicate` | 檔案內容的 SHA-256 與既有文件相同 | 不重複保存、不重複轉換，前端提示既有檔名 |
+| `needs_review` | PDF 與 TXT 成功，但 JSON 缺少案號、主文或理由 | 保留檔案，讓使用者在筆記頁檢查 |
+| 上傳失敗 | 非 PDF、沒有檔案或擷取不到文字 | 回傳 400 與原因，不建立不完整資料 |
+
+> 掃描型 PDF 如果沒有可選取的文字，`pdfplumber` 無法直接擷取，系統會提示「PDF 沒有可擷取的文字」。這類檔案需要先經 OCR，才可進入此流程。
+
 ## 專案結構
 
 ```text
