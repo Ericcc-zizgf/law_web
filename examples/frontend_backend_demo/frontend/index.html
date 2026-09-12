@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>前後端資料傳遞示範</title>
+  <style>
+    body { margin: 0; padding: 40px 20px; background: #f4f6f5; color: #182b3a; font-family: system-ui, sans-serif; }
+    main { max-width: 620px; margin: 0 auto; }
+    section { margin-top: 20px; padding: 24px; border: 1px solid #dce4e2; border-radius: 14px; background: white; }
+    label { display: block; margin-top: 12px; font-weight: 700; }
+    input, textarea { box-sizing: border-box; width: 100%; margin-top: 6px; padding: 10px; border: 1px solid #c8d6d1; border-radius: 8px; font: inherit; }
+    textarea { min-height: 100px; resize: vertical; }
+    button { margin-top: 16px; padding: 10px 16px; border: 0; border-radius: 8px; color: white; background: #0b6b62; cursor: pointer; font-weight: 700; }
+    button:hover { background: #084e49; }
+    #status { min-height: 24px; margin-top: 12px; color: #526270; }
+    .message { margin-top: 10px; padding: 12px; border-left: 3px solid #0b6b62; background: #e8f3ef; }
+    .message strong { display: block; }
+    code { padding: 2px 5px; border-radius: 4px; background: #eef2f1; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>前端 → 後端 → 前端</h1>
+    <p>送出表單後，資料會經過 <code>fetch()</code> 傳到 Flask，再把回傳結果畫回這個頁面。</p>
+
+    <section>
+      <h2>1. 前端輸入資料</h2>
+      <form id="messageForm">
+        <label for="name">姓名</label>
+        <input id="name" name="name" placeholder="例如：小明" required>
+
+        <label for="message">訊息</label>
+        <textarea id="message" name="message" placeholder="例如：這是從前端送來的資料" required></textarea>
+
+        <button type="submit">送到後端</button>
+        <div id="status" role="status"></div>
+      </form>
+    </section>
+
+    <section>
+      <h2>2. 後端回傳後顯示</h2>
+      <div id="messageList">目前沒有資料。</div>
+    </section>
+  </main>
+
+  <script>
+    const form = document.querySelector('#messageForm');
+    const status = document.querySelector('#status');
+    const messageList = document.querySelector('#messageList');
+
+    function renderMessages(messages) {
+      if (messages.length === 0) {
+        messageList.textContent = '目前沒有資料。';
+        return;
+      }
+
+      messageList.innerHTML = messages.map(item => `
+        <div class="message">
+          <strong>${escapeHtml(item.name)}</strong>
+          <span>${escapeHtml(item.message)}</span>
+        </div>
+      `).join('');
+    }
+
+    function escapeHtml(value) {
+      const element = document.createElement('div');
+      element.textContent = value;
+      return element.innerHTML;
+    }
+
+    async function loadMessages() {
+      // GET：前端向後端讀取目前已有的資料。
+      const response = await fetch('/api/messages');
+      const data = await response.json();
+      renderMessages(data);
+    }
+
+    form.addEventListener('submit', async (event) => {
+      event.preventDefault();
+
+      const payload = {
+        name: document.querySelector('#name').value,
+        message: document.querySelector('#message').value,
+      };
+
+      try {
+        status.textContent = '正在傳送……';
+
+        // POST：把前端資料包成 JSON，送到 Flask 的 API。
+        const response = await fetch('/api/messages', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || '送出失敗');
+
+        status.textContent = `後端已收到第 ${data.id} 筆資料。`;
+        form.reset();
+
+        // 後端回傳成功後，再重新讀取資料並更新畫面。
+        await loadMessages();
+      } catch (error) {
+        status.textContent = `錯誤：${error.message}`;
+      }
+    });
+
+    loadMessages();
+  </script>
+</body>
+</html>

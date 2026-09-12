@@ -1,0 +1,3886 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="UTF-8">
+    <!-- Viewport 設定：讓網頁能在手機平板等行動裝置上按比例正確縮放 (RWD 基礎) -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>歷史資料匯入工作區・訴願書判決工具平台</title>
+
+    <!-- <script src="...">：從外部引入 Mozilla 開發的 PDF.js 核心程式庫 -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+
+    <!--<style>：這裡面寫的是 CSS，負責網頁的「外觀設計、顏色、排版與動畫」 -->
+    <style>
+        /*:root 是一個全域選擇器。我們在這裡宣告 CSS 變數 (以 -- 開頭)，
+           方便以後如果想換主題顏色，只要改這裡，整個網頁都會一起變。 */
+        :root {
+            --primary-color: #4a90e2; /* 定義主色調：柔和的藍色 */
+            --secondary-color: #f5f7fa; /* 定義次色調：極淺的灰藍色，用作背景 */
+            --text-color: #333; /* 定義文字顏色：深灰色 (比純黑色看起來更舒服) */
+            --border-color: #e1e4e8; /* 定義邊框顏色：淺灰色 */
+            --highlight-color: rgba(255, 235, 59, 0.4); /* 定義未使用的舊版螢光筆顏色 */
+            --eraser-color: rgba(255, 192, 203, 0.5); /* 定義橡皮擦的提示顏色 */
+        }
+
+        /*body 是網頁的主體內容區。 */
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; /* 設定字體優先順序 */
+            background-color: var(--secondary-color); /* 套用上面定義的背景色變數 */
+            color: var(--text-color); /* 套用文字顏色變數 */
+            margin: 0; padding: 0; /* 歸零瀏覽器預設的邊距 */
+            display: flex; /* 使用 Flexbox 彈性排版，讓內部元素可以並排或靈活對齊 */
+            height: 100vh; /* 高度設為 100vh (Viewport Height)，代表剛好填滿整個視窗高度 */
+            overflow: hidden; /* 隱藏超出視窗範圍的內容，也就是把網頁右側的捲動條藏起來 */
+            position: relative; /* 設定相對定位，讓裡面的絕對定位元素有參考座標 */
+        }
+
+        /* 首頁點進工作區後共用的垂直流程側欄 */
+        .process-rail {
+            position: fixed;
+            inset: 0 auto 0 0;
+            z-index: 40;
+            width: 88px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 28px 0;
+            background: #ffffff;
+            border-right: 1px solid var(--border-color);
+        }
+        .process-rail-title {
+            margin: 0 0 32px;
+            color: #82909b;
+            font-size: 10px;
+            font-weight: 800;
+            letter-spacing: .16em;
+            writing-mode: vertical-rl;
+        }
+        .process-steps {
+            position: relative;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 58px;
+            margin: 0;
+            padding: 12px 0;
+            list-style: none;
+        }
+        .process-steps::before {
+            content: "";
+            position: absolute;
+            top: 32px;
+            bottom: 32px;
+            left: 50%;
+            width: 1px;
+            background: #d8e1e5;
+            transform: translateX(-50%);
+        }
+        .process-step {
+            position: relative;
+            z-index: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 38px;
+            height: 38px;
+            border: 2px solid #aebdc5;
+            border-radius: 50%;
+            background: #ffffff;
+            color: #71818c;
+            font-size: 10px;
+            font-weight: 800;
+            letter-spacing: .02em;
+            text-decoration: none;
+            transition: transform .18s ease, border-color .18s ease, color .18s ease, box-shadow .18s ease, background-color .18s ease;
+        }
+        .process-step:hover, .process-step:focus-visible { transform: scale(1.14); outline: none; border-color: var(--rail-color); color: var(--rail-color); }
+        .process-step.active { border-color: var(--rail-color); background: var(--rail-color); color: #ffffff; box-shadow: 0 0 0 5px color-mix(in srgb, var(--rail-color) 18%, transparent), 0 0 14px color-mix(in srgb, var(--rail-color) 32%, transparent); }
+        .process-step[data-step="1"] { --rail-color: #102a43; }
+        .process-step[data-step="2"] { --rail-color: #0f766e; }
+        .process-step[data-step="3"] { --rail-color: #b7791f; }
+        .process-step-label {
+            position: absolute;
+            left: 48px;
+            padding: 7px 9px;
+            border: 1px solid var(--border-color);
+            border-radius: 7px;
+            background: #ffffff;
+            color: #3e515e;
+            font-size: 12px;
+            font-weight: 700;
+            white-space: nowrap;
+            opacity: 0;
+            pointer-events: none;
+            transform: translateX(-5px);
+            transition: opacity .18s ease, transform .18s ease;
+        }
+        .process-step:hover .process-step-label, .process-step:focus-visible .process-step-label { opacity: 1; transform: translateX(0); }
+
+        /* ==================== 首頁與檔案管理區塊 (#homeScreen) ==================== */
+        /* 預設的首頁狀態 */
+        #homeScreen {
+            flex: 1; /* 在 Flexbox 中，要求這個區塊填滿所有剩餘空間 */
+            padding: 20px 20px 20px 112px; /* 為左側流程欄預留空間 */
+            overflow-y: auto; /* 如果首頁檔案太多，允許首頁自己內部產生垂直捲動條 */
+            transition: all 0.3s ease; /* 當 CSS 屬性改變時 (如縮小寬度)，套用 0.3 秒的平滑漸變動畫 */
+            position: absolute; /* 絕對定位：浮在畫面上，脫離原本的排版流 */
+            width: 100%; height: 100%; /* 寬高皆為 100%，也就是佔滿整個螢幕 */
+            box-sizing: border-box; /* 讓 padding 不會撐大元素的寬高 */
+            z-index: 10; /* Z 軸層級：數字越大越在上面，確保首頁蓋在閱讀區上面 */
+            background-color: var(--secondary-color); /* 背景色 */
+        }
+
+        /*關鍵機關：當外層 body 擁有 reading-mode 這個 class 時，#homeScreen 的樣式會被覆寫 */
+        body.reading-mode #homeScreen {
+            left: 88px;
+            width: 300px; /* 寬度從 100% 瞬間縮小成只有 300px (變成左側邊欄) */
+            border-right: 1px solid var(--border-color); /* 右邊加一條分隔線 */
+            background-color: white; /* 背景變成白色 */
+            padding: 10px; /* 縮小內邊距 */
+            box-shadow: 2px 0 5px rgba(0,0,0,0.05); /* 在右側加上淡淡的陰影，增加立體感 */
+        }
+
+        /*以下皆為「閱讀模式 (reading-mode)」啟動時，首頁內部元素的微調 (為了塞進 300px 的空間) */
+        body.reading-mode #homeScreen .container { box-shadow: none; padding: 0; background: transparent; } /* 移除容器陰影 */
+        body.reading-mode #homeScreen h1 { font-size: 1.2em; margin-bottom: 15px; text-align: left; padding-left: 10px; } /* 縮小標題 */
+        body.reading-mode #homeScreen .upload-section { padding: 15px; margin-bottom: 15px; border-width: 1px; } /* 縮小上傳區塊 */
+        body.reading-mode #homeScreen .upload-section p { display: none; } /* 隱藏「拖曳檔案至此」的囉嗦文字 */
+        body.reading-mode #homeScreen .controls { flex-direction: column; align-items: flex-start; gap: 10px; } /* 控制列改為垂直排列 */
+        body.reading-mode #homeScreen .view-toggle { width: 100%; display: flex; } /* 視圖切換按鈕佔滿寬度 */
+        body.reading-mode #homeScreen .view-toggle button { flex: 1; padding: 5px; font-size: 0.9em; } /* 按鈕均分空間 */
+        body.reading-mode #homeScreen .grid-view { grid-template-columns: 1fr; } /* 網格模式強制變成單行排列 */
+        body.reading-mode #homeScreen .grid-item { display: flex; align-items: center; padding: 10px; text-align: left; }
+        body.reading-mode #homeScreen .pdf-cover { width: 40px; height: 50px; font-size: 12px; margin: 0 10px 0 0; } /* 縮小 PDF 假封面圖 */
+
+        /* 首頁容器基本樣式 */
+        .container { max-width: 1000px; margin: 0 auto; background-color: white; padding: 30px; border-radius: 10px; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1); transition: all 0.3s ease; }
+        h1 { text-align: center; color: var(--primary-color); margin-bottom: 30px; }
+
+        /* 虛線框上傳區的樣式 */
+        .upload-section { border: 2px dashed var(--primary-color); padding: 40px; text-align: center; border-radius: 8px; margin-bottom: 30px; background-color: #f9fbfd; transition: all 0.3s; }
+        .upload-section:hover { background-color: #eef5fb; } /* 滑鼠懸停 (hover) 時背景變色 */
+
+        /* 模擬上傳按鈕的標籤外觀 */
+        .upload-btn { background-color: var(--primary-color); color: white; padding: 10px 20px; border: none; border-radius: 5px; cursor: pointer; font-size: 16px; display: inline-block; }
+        input[type="file"] { display: none; } /* 隱藏瀏覽器原生醜醜的上傳按鈕 */
+
+        /* 切換檢視模式 (網格/列表) 的按鈕群組 */
+        .controls { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; padding-bottom: 15px; border-bottom: 1px solid var(--border-color); }
+        .view-toggle button { background: none; border: 1px solid var(--border-color); padding: 8px 15px; cursor: pointer; color: var(--text-color); }
+        .view-toggle button.active { background-color: var(--primary-color); color: white; border-color: var(--primary-color); } /* 被啟動 (active) 時的顏色 */
+        .view-toggle button:first-child { border-radius: 5px 0 0 5px; } /* 左邊按鈕左上左下導圓角 */
+        .view-toggle button:last-child { border-radius: 0 5px 5px 0; border-left: none; } /* 右邊按鈕右上右下導圓角 */
+
+        /* 網格模式排版 (利用 CSS Grid) */
+        .grid-view { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 20px; }
+        .grid-item { border: 1px solid var(--border-color); border-radius: 8px; padding: 15px; text-align: center; background-color: white; cursor: pointer; }
+        .grid-item:hover, .grid-item.active { border-color: var(--primary-color); background-color: #eef5fb;} /* 滑鼠移過去或正在閱讀時的高亮效果 */
+
+        /* 畫一個假的 PDF 紅色封面圖 */
+        .pdf-cover { width: 120px; height: 160px; background-color: #ffebee; color: #d32f2f; display: flex; align-items: center; justify-content: center; margin: 0 auto 15px auto; border-radius: 4px; font-weight: bold; font-size: 24px; border: 1px solid #ffcdd2; }
+
+        /* 檔案標題：限制最多顯示 2 行，超過會變成刪節號 (...) */
+        .pdf-title { font-size: 14px; word-wrap: break-word; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+
+        /* 列表模式排版 (利用 CSS Flex) */
+        .list-view { display: flex; flex-direction: column; gap: 10px; }
+        .list-item { display: flex; align-items: center; padding: 12px 15px; border: 1px solid var(--border-color); border-radius: 5px; background-color: white; cursor: pointer; }
+        .list-item:hover, .list-item.active { border-color: var(--primary-color); background-color: #eef5fb; }
+        .list-icon { color: #d32f2f; margin-right: 15px; font-weight: bold; }
+        .list-title { flex-grow: 1; font-size: 15px; } /* 標題會自動伸展填滿剩下的空間 (flex-grow: 1) */
+        .list-size { color: #777; font-size: 13px; }
+
+        /* 共用的隱藏與空狀態類別 */
+        .empty-state { text-align: center; color: #777; padding: 40px; font-style: italic; }
+        .hidden { display: none !important; } /* !important 代表最高優先權，強制不顯示 */
+
+        /* ==================== 閱讀與筆記區塊 (#readerScreen) ==================== */
+        /* 閱讀區初始狀態 */
+        #readerScreen {
+            position: absolute; left: 388px; /* 保留流程欄 88px，再保留文件庫 300px */
+            width: calc(100% - 388px); /* 寬度為螢幕總寬減去兩個側欄 */
+            height: 100%; background: #e0e0e0; /* 灰色背景，讓白色的 PDF 文件更明顯 */
+            display: flex; flex-direction: column; /* 內部元素垂直排列 (工具列在上，閱讀器在下) */
+            transform: translateX(100%); /* 💡 預設狀態：將整個區塊往右平移 100% 的寬度，藏到螢幕外面！ */
+            transition: transform 0.3s ease; /* 平移時要有動畫效果 */
+            z-index: 5; /* 層級比首頁 (10) 低 */
+        }
+
+        /* 當啟動閱讀模式時：把平移歸零，區塊就會從右邊「滑入」螢幕內 */
+        body.reading-mode #readerScreen { transform: translateX(0); }
+
+        /* 頂部工具列 */
+        .toolbar { padding: 10px 20px; background: white; border-bottom: 1px solid var(--border-color); display: flex; gap: 10px; align-items: center; box-shadow: 0 2px 4px rgba(0,0,0,0.05); z-index: 5; flex-shrink: 0; flex-wrap: wrap; }
+        .tool-btn { padding: 6px 12px; border: 1px solid var(--border-color); border-radius: 5px; cursor: pointer; background: white; display: flex; align-items: center; gap: 5px; font-size: 14px; }
+        .tool-btn:hover { background: var(--secondary-color); }
+        .tool-btn.active { border-color: var(--primary-color); color: var(--primary-color); background: #cfe0f0; } /* 工具被選中時變藍色 */
+
+        .close-btn { background-color: #f44336; color: white; border: none; padding: 6px 12px; border-radius: 5px; cursor: pointer; font-weight: bold; margin-right: 10px; }
+        .close-btn:hover { background-color: #d32f2f; }
+
+        /* 橡皮擦模式切換的次選單 (預設隱藏 display: none) */
+        .eraser-sub-options { display: none; gap: 5px; align-items: center; background: #fff0f0; padding: 4px 8px; border-radius: 5px; border: 1px solid #ffcdd2; }
+        body.tool-eraser .eraser-sub-options { display: flex; } /* 當選取橡皮擦時顯示出來 */
+
+        .sub-tool-btn { padding: 4px 8px; border: 1px solid #ff8a80; background: white; border-radius: 4px; cursor: pointer; font-size: 12px; }
+        .sub-tool-btn.active { background: #ff5252; color: white; }
+
+        /* 閱讀區下半部 (包含 PDF 顯示區和筆記側邊欄) */
+        .reader-body { display: flex; flex: 1; overflow: hidden; }
+
+        /* 中間的 PDF 文件滾動區 */
+        .pdf-viewer-container { flex: 1; overflow-y: auto; padding: 20px; display: flex; flex-direction: column; align-items: center; gap: 20px; }
+        /* 包裝單頁 PDF 的外框，設定相對定位 (relative)，讓裡面的選取框可以絕對定位 */
+        .pdf-page-wrapper { position: relative; background: white; box-shadow: 0 2px 10px rgba(0,0,0,0.2); }
+        canvas { display: block; } /* PDF 是畫在 HTML 的 canvas (畫布) 標籤上 */
+        /* PDF.js 文字層：讓使用者可像一般網頁一樣拖曳選取真實文字。 */
+        .text-layer {
+            position: absolute;
+            inset: 0;
+            z-index: 3;
+            overflow: hidden;
+            line-height: 1;
+            text-align: initial;
+            text-size-adjust: none;
+            transform-origin: 0 0;
+            user-select: none;
+        }
+        .text-layer span, .text-layer br {
+            position: absolute;
+            color: transparent;
+            white-space: pre;
+            cursor: default;
+            transform-origin: 0 0;
+        }
+        .mode-highlight .text-layer { user-select: text; cursor: text; }
+        .mode-highlight .text-layer span { cursor: text; }
+        .mode-highlight .text-layer ::selection { background: rgba(255, 226, 84, 0.72); }
+        .mode-eraser .text-layer span { cursor: pointer; }
+
+        /* 右側的筆記面板 */
+        .notes-panel {
+            width: 300px;
+            background: white;
+            border-left: 1px solid var(--border-color);
+            display: flex;
+            flex-direction: column;
+            padding: 15px;
+            box-sizing: border-box;
+            overflow-y: auto;
+            transition: all 0.3s ease; /* 💡 加上動畫漸變效果 */
+        }
+
+        /* 💡 當面板被加上 collapsed 類別時，寬度變 0，內距消失，把它藏起來 */
+        .notes-panel.collapsed {
+            width: 0;
+            padding-left: 0;
+            padding-right: 0;
+            border-left: none;
+            overflow: hidden;
+        }
+
+        .notes-panel h2 { margin-top: 0; font-size: 1.2em; color: var(--primary-color); border-bottom: 2px solid var(--secondary-color); padding-bottom: 10px; white-space: nowrap; /* 避免縮放時標題斷行 */ }
+
+        /* 💡 新增：收合控制把手的樣式 */
+        .panel-toggle {
+            width: 20px;
+            background-color: var(--secondary-color);
+            border-left: 1px solid var(--border-color);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            z-index: 10;
+            transition: background-color 0.2s;
+        }
+        .panel-toggle:hover {
+            background-color: #d0d7e0;
+            color: var(--primary-color);
+        }
+        #panelToggleIcon {
+            font-size: 12px;
+            color: #fff;
+            transition: transform 0.3s ease; /* 箭頭旋轉動畫 */
+        }
+
+        /* 每一則擷取出來的反白筆記卡片 */
+        .note-card { background: #fff3e0; padding: 12px; border-radius: 5px; margin-bottom: 15px; font-size: 14px; border-left: 4px solid #ff9800; box-shadow: 0 2px 4px rgba(0,0,0,0.05); line-height: 1.5; word-wrap: break-word;}
+        .note-empty { color: #999; text-align: center; font-style: italic; margin-top: 20px; font-size: 14px; }
+
+        /* 拖曳時依文字實際座標顯示預覽；沒有圈選外框。 */
+        .selection-preview-layer { position: absolute; inset: 0; z-index: 2; pointer-events: none; }
+        .selection-preview { position: absolute; border-radius: 2px; background: rgba(255, 226, 84, 0.38); box-shadow: inset 0 -1px 0 rgba(176, 137, 0, 0.28); }
+
+        /* 載入中的 CSS 旋轉圈圈動畫 */
+        .loader { border: 4px solid #f3f3f3; border-top: 4px solid var(--primary-color); border-radius: 50%; width: 24px; height: 24px; animation: spin 1s linear infinite; display: none; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } } /* 讓它 360 度無限旋轉 */
+
+        /* 根據不同狀態改變滑鼠游標圖案 */
+        .mode-highlight canvas { cursor: text; } /* 反白模式顯示文字選取游標 */
+        .mode-eraser canvas { cursor: pointer; } /* 橡皮擦模式顯示「點擊的手指」 */
+        /* 反白標記的懸浮預覽卡片樣式 */
+        .highlight-tooltip {
+            position: absolute;
+            background: #ffffff;
+            color: #333;
+            border: 1px solid #d0aa22;
+            border-left: 4px solid #d0aa22;
+            padding: 8px 12px;
+            border-radius: 6px;
+            font-size: 13px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+            pointer-events: none; /* 關鍵：防止提示卡片擋到滑鼠本身的事件 */
+            z-index: 1000; /* 確保浮在最上層 */
+            display: none; /* 預設隱藏 */
+            max-width: 250px;
+            word-wrap: break-word;
+            line-height: 1.4;
+            transition: opacity 0.2s ease;
+        }
+                /* 💡 對話框氣泡樣式（釘在反白文字正上方） */
+                .speech-bubble {
+            position: absolute;
+            width: 220px;
+            background: #ffffff;
+            border: 2px solid #ff9800;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+            z-index: 100;
+            padding: 10px;
+            font-size: 13px;
+            line-height: 1.4;
+            color: #333;
+            word-wrap: break-word;
+            transform: translate(-50%, -100%); /* 讓定位點剛好對齊底部正中央 */
+            margin-top: -10px; /* 與反白文字保持一點距離 */
+        }
+        /* 氣泡框下方的尖角 */
+        .speech-bubble::after {
+            content: '';
+            position: absolute;
+            bottom: -8px;
+            left: 50%;
+            transform: translateX(-50%);
+            border-width: 8px 8px 0;
+            border-style: solid;
+            border-color: #ff9800 transparent;
+            display: block;
+            width: 0;
+        }
+        .speech-bubble-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid #ffe0b2;
+            padding-bottom: 4px;
+            margin-bottom: 6px;
+            font-weight: bold;
+            color: #e65100;
+            font-size: 11px;
+        }
+        .speech-bubble-close {
+            background: none;
+            border: none;
+            color: #d32f2f;
+            cursor: pointer;
+            font-weight: bold;
+            font-size: 14px;
+            padding: 0;
+        }
+
+        /* ==================== 工作台視覺系統（v7） ==================== */
+        :root {
+            --ink: #182b3a;
+            --ink-soft: #526270;
+            --canvas: #f4f6f5;
+            --paper: #ffffff;
+            --line: #dce4e2;
+            --line-strong: #c8d6d1;
+            --accent: #0b6b62;
+            --accent-deep: #084e49;
+            --accent-pale: #e8f3ef;
+            --warning: #a96009;
+            --warning-pale: #fff7e6;
+            --shadow: 0 16px 42px rgba(24, 43, 58, 0.08);
+        }
+
+        body {
+            font-family: Inter, "Noto Sans TC", "PingFang TC", "Microsoft JhengHei", sans-serif;
+            background: var(--canvas);
+            color: var(--ink);
+        }
+
+        #homeScreen {
+            left: 88px;
+            width: calc(100% - 88px);
+            padding: 40px 32px 56px;
+            background:
+                radial-gradient(circle at 84% 8%, rgba(110, 168, 151, 0.14), transparent 24rem),
+                var(--canvas);
+        }
+
+        .container {
+            max-width: none;
+            padding: 0;
+            background: transparent;
+            box-shadow: none;
+            border-radius: 0;
+        }
+
+        .workspace-header {
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            gap: 24px;
+            min-height: 74px;
+            margin-bottom: 26px;
+        }
+
+        .brand-lockup { display: flex; align-items: flex-start; gap: 15px; }
+        .brand-mark {
+            display: grid;
+            place-items: center;
+            width: 46px;
+            height: 46px;
+            flex: 0 0 auto;
+            border-radius: 14px;
+            background: var(--ink);
+            color: #fff;
+            box-shadow: 0 8px 18px rgba(24, 43, 58, 0.16);
+            font-size: 19px;
+            font-weight: 800;
+            letter-spacing: 0.08em;
+        }
+        .workspace-eyebrow {
+            margin: 2px 0 5px;
+            color: var(--accent);
+            font-size: 12px;
+            font-weight: 800;
+            letter-spacing: 0.12em;
+        }
+        h1 {
+            margin: 0;
+            color: var(--ink);
+            text-align: left;
+            font-size: clamp(24px, 3vw, 34px);
+            line-height: 1.18;
+            letter-spacing: -0.04em;
+        }
+        .workspace-subtitle {
+            max-width: 620px;
+            margin: 9px 0 0;
+            color: var(--ink-soft);
+            font-size: 14px;
+            line-height: 1.65;
+        }
+        .workspace-badge {
+            padding: 8px 11px;
+            border: 1px solid #d79a9a;
+            border-radius: 999px;
+            color: #a33f45;
+            background: #fff8f8;
+            font-size: 13px;
+            font-weight: 700;
+            text-decoration: none;
+            white-space: nowrap;
+            transition: background-color .18s ease, border-color .18s ease, color .18s ease;
+        }
+        .workspace-badge:hover, .workspace-badge:focus-visible {
+            border-color: #bc6267;
+            color: #8f2f37;
+            background: #fff0f0;
+            outline: none;
+        }
+
+        .upload-section {
+            position: relative;
+            overflow: hidden;
+            display: grid;
+            grid-template-columns: auto minmax(0, 1fr) auto;
+            align-items: center;
+            gap: 22px;
+            min-height: 112px;
+            margin-bottom: 28px;
+            padding: 28px 32px;
+            border: 1.5px dashed #8cae9f;
+            border-radius: 18px;
+            background: rgba(255,255,255,.72);
+            transition: border-color .2s ease, background-color .2s ease, transform .2s ease;
+        }
+        .upload-section::before {
+            position: absolute;
+            inset: 0 auto 0 0;
+            z-index: 0;
+            width: var(--upload-progress, 0%);
+            border-radius: inherit;
+            background: linear-gradient(90deg, rgba(141, 202, 181, .62), rgba(224, 242, 235, .82));
+            content: "";
+            opacity: 0;
+            pointer-events: none;
+            transition: width .16s ease, opacity .2s ease;
+        }
+        .upload-section > * { position: relative; z-index: 1; }
+        .upload-section.has-upload-progress::before { opacity: 1; }
+        .upload-section:hover, .upload-section.is-dragging {
+            border-color: var(--accent);
+            background: var(--accent-pale);
+        }
+        .upload-section.is-dragging { transform: scale(1.006); }
+        .upload-icon {
+            display: grid;
+            place-items: center;
+            width: 52px;
+            height: 52px;
+            border-radius: 15px;
+            color: var(--accent);
+            background: var(--accent-pale);
+        }
+        .upload-icon svg { width: 25px; height: 25px; }
+        .upload-copy p { margin: 0; }
+        .upload-eyebrow {
+            color: var(--accent);
+            font-size: 11px;
+            font-weight: 800;
+            letter-spacing: .12em;
+        }
+        .upload-copy h2 {
+            margin: 4px 0 3px;
+            color: var(--ink);
+            font-size: 17px;
+            letter-spacing: -.02em;
+        }
+        .upload-description { color: var(--ink-soft); font-size: 13px; line-height: 1.5; }
+        .upload-btn {
+            padding: 11px 16px;
+            border-radius: 9px;
+            background: var(--accent);
+            box-shadow: 0 5px 13px rgba(11, 107, 98, .18);
+            font-size: 14px;
+            font-weight: 700;
+            transition: background-color .2s ease, transform .2s ease;
+        }
+        .upload-btn:hover { background: var(--accent-deep); transform: translateY(-1px); }
+
+        .upload-section.is-uploading {
+            border-color: var(--accent);
+            background: #f3faf7;
+        }
+        .upload-section.is-uploading .upload-btn {
+            opacity: .55;
+            pointer-events: none;
+        }
+        .upload-progress {
+            position: absolute;
+            inset: 0;
+            z-index: 2;
+            display: flex;
+            align-items: flex-end;
+            justify-content: flex-end;
+            padding: 0 32px 13px;
+            pointer-events: none;
+            opacity: 1;
+            transition: opacity 1s ease;
+        }
+        #uploadProgress[hidden] { display: none !important; }
+        .upload-progress-header {
+            display: flex;
+            flex-direction: column;
+            align-items: flex-end;
+            gap: 2px;
+            min-width: 150px;
+            color: rgba(82, 98, 112, .68);
+            font-size: 12px;
+            font-weight: 700;
+            text-align: right;
+            text-shadow: 0 1px 1px rgba(255,255,255,.35);
+        }
+        .upload-progress-percent {
+            color: rgba(82, 98, 112, .72);
+            font-size: 13px;
+            font-variant-numeric: tabular-nums;
+        }
+        .upload-progress-track {
+            display: none;
+        }
+        .upload-progress-fill {
+            display: block;
+            width: 0;
+            height: 100%;
+            border-radius: inherit;
+            background: linear-gradient(90deg, #72aa96, var(--accent));
+            transition: width .16s ease;
+        }
+        .upload-progress.is-complete .upload-progress-fill { background: #4e9a73; }
+        .upload-progress.is-error .upload-progress-fill { background: #b55050; }
+        .upload-progress.is-error .upload-progress-header { color: #a33f45; }
+        .upload-section.is-progress-fading::before { opacity: 0; transition: opacity 1s ease; }
+        .upload-section.is-progress-fading .upload-progress { opacity: 0; }
+
+        .controls {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 16px;
+            margin-bottom: 16px;
+            padding: 0 0 13px;
+            border-bottom: 1px solid var(--line);
+        }
+        .library-label { color: var(--ink); font-size: 14px; font-weight: 750; }
+        #fileCount { color: var(--ink-soft); font-size: 13px; font-weight: 500; }
+        .library-actions {
+            display: flex;
+            min-width: 0;
+            align-items: center;
+            gap: 10px;
+            flex-wrap: wrap;
+            justify-content: flex-end;
+        }
+        .library-category {
+            min-width: 230px;
+            height: 36px;
+            padding: 0 34px 0 12px;
+            border: 1px solid var(--line);
+            border-radius: 9px;
+            color: var(--ink);
+            background: #fff;
+            cursor: pointer;
+            font: inherit;
+            font-size: 13px;
+            font-weight: 650;
+        }
+        .library-category:hover { border-color: #9cbab4; }
+        .library-category:focus-visible {
+            border-color: var(--accent);
+            outline: 3px solid rgba(15,118,110,.13);
+        }
+        .library-year { min-width: 132px; }
+        .library-law { min-width: 190px; }
+        .library-year:disabled { cursor: not-allowed; color: #96a3a8; background: #f4f6f6; }
+        .view-toggle {
+            display: flex;
+            padding: 3px;
+            border: 1px solid var(--line);
+            border-radius: 9px;
+            background: #fff;
+        }
+        .view-toggle button, .view-toggle button:first-child, .view-toggle button:last-child {
+            border: 0;
+            border-radius: 6px;
+            padding: 6px 10px;
+            color: var(--ink-soft);
+            font-size: 12px;
+        }
+        .view-toggle button.active { background: var(--ink); color: #fff; }
+        .delete-selection-button, .cancel-selection-button {
+            min-height: 36px;
+            border-radius: 9px;
+            font: inherit;
+            font-size: 12px;
+            font-weight: 750;
+            cursor: pointer;
+            transition: color .18s ease, border-color .18s ease, background-color .18s ease, opacity .18s ease;
+        }
+        .delete-selection-button {
+            padding: 6px 11px;
+            border: 1px solid #d99898;
+            color: #a33f45;
+            background: #fffafa;
+        }
+        .delete-selection-button:hover, .delete-selection-button.is-active {
+            border-color: #a33f45;
+            color: #fff;
+            background: #a33f45;
+        }
+        .delete-selection-button:disabled { opacity: .5; cursor: not-allowed; }
+        .cancel-selection-button {
+            padding: 6px 4px;
+            border: 0;
+            color: var(--ink-soft);
+            background: transparent;
+        }
+        .cancel-selection-button:hover { color: var(--ink); background: #eef3f2; }
+
+        .grid-view { grid-template-columns: repeat(auto-fill, minmax(218px, 1fr)); gap: 14px; }
+        .grid-item, .list-item {
+            border: 1px solid var(--line);
+            border-radius: 13px;
+            background: rgba(255,255,255,.88);
+            box-shadow: 0 1px 0 rgba(24,43,58,.02);
+            transition: border-color .2s ease, box-shadow .2s ease, transform .2s ease;
+        }
+        .grid-item {
+            display: flex;
+            align-items: center;
+            gap: 13px;
+            padding: 14px;
+            text-align: left;
+        }
+        .grid-item:hover, .grid-item.active, .list-item:hover, .list-item.active {
+            border-color: #91bcae;
+            background: #fff;
+            box-shadow: 0 10px 22px rgba(24,43,58,.08);
+            transform: translateY(-2px);
+        }
+        .grid-item.active, .list-item.active { box-shadow: inset 3px 0 0 var(--accent), 0 8px 18px rgba(24,43,58,.06); }
+        .grid-item.selection-mode, .list-item.selection-mode { cursor: pointer; }
+        .grid-item.selected-for-deletion, .list-item.selected-for-deletion {
+            border-color: #c66c6c;
+            background: #fff6f5;
+            box-shadow: inset 3px 0 0 #b55050, 0 7px 16px rgba(156,55,55,.08);
+        }
+        .selection-check {
+            display: none;
+            place-items: center;
+            width: 21px;
+            height: 21px;
+            flex: 0 0 auto;
+            border: 1px solid #c7d2d0;
+            border-radius: 50%;
+            color: transparent;
+            background: #fff;
+            font-size: 12px;
+            font-weight: 800;
+        }
+        .selection-mode .selection-check { display: grid; }
+        .selected-for-deletion .selection-check { border-color: #b55050; color: #fff; background: #b55050; }
+        .pdf-cover {
+            position: relative;
+            width: 45px;
+            height: 58px;
+            flex: 0 0 auto;
+            margin: 0;
+            border: 1px solid #bfd3cd;
+            border-radius: 7px;
+            background: #f4faf7;
+            color: var(--accent);
+            font-size: 10px;
+            font-weight: 800;
+            letter-spacing: .08em;
+        }
+        .pdf-cover::before {
+            position: absolute;
+            top: 0; right: 0;
+            width: 12px; height: 12px;
+            border-left: 1px solid #bfd3cd;
+            border-bottom: 1px solid #bfd3cd;
+            border-radius: 0 6px 0 4px;
+            background: #fff;
+            content: "";
+        }
+        .document-meta { min-width: 0; }
+        .pdf-title { color: var(--ink); font-size: 13px; font-weight: 700; line-height: 1.45; }
+        .document-detail { display: block; margin-top: 5px; color: var(--ink-soft); font-size: 11px; }
+        .list-view { gap: 8px; }
+        .list-item { padding: 12px 15px; }
+        .list-icon {
+            display: grid;
+            place-items: center;
+            width: 31px;
+            height: 36px;
+            margin-right: 12px;
+            border: 1px solid #bfd3cd;
+            border-radius: 6px;
+            color: var(--accent);
+            background: #f4faf7;
+            font-size: 9px;
+            font-weight: 800;
+        }
+        .list-title { color: var(--ink); font-weight: 700; }
+        .list-size { color: var(--ink-soft); }
+        .empty-state {
+            padding: 58px 20px;
+            border: 1px dashed var(--line-strong);
+            border-radius: 16px;
+            color: var(--ink-soft);
+            background: rgba(255,255,255,.45);
+            font-style: normal;
+        }
+
+        #readerScreen { left: 324px; width: calc(100% - 324px); background: #e9eeec; }
+        body.reading-mode #homeScreen {
+            width: 324px;
+            padding: 18px 14px;
+            border-right-color: var(--line);
+            background: #fbfcfb;
+            box-shadow: none;
+        }
+        body.reading-mode #homeScreen .workspace-header { margin: 4px 4px 15px; }
+        body.reading-mode #homeScreen .workspace-subtitle,
+        body.reading-mode #homeScreen .workspace-badge,
+        body.reading-mode #homeScreen .workspace-eyebrow { display: none; }
+        body.reading-mode #homeScreen .brand-mark { width: 32px; height: 32px; border-radius: 10px; font-size: 13px; }
+        body.reading-mode #homeScreen h1 { margin: 5px 0 0; padding: 0; color: var(--ink); font-size: 17px; }
+        body.reading-mode #homeScreen .upload-section {
+            grid-template-columns: auto minmax(0, 1fr);
+            gap: 11px;
+            min-height: 0;
+            padding: 14px;
+            margin-bottom: 16px;
+            border-radius: 13px;
+        }
+        body.reading-mode #homeScreen .upload-icon { width: 36px; height: 36px; border-radius: 10px; }
+        body.reading-mode #homeScreen .upload-icon svg { width: 18px; height: 18px; }
+        body.reading-mode #homeScreen .upload-copy h2 { font-size: 13px; }
+        body.reading-mode #homeScreen .upload-description { display: none; }
+        body.reading-mode #homeScreen .upload-btn { grid-column: 1 / -1; text-align: center; padding: 8px 10px; font-size: 12px; }
+        body.reading-mode #homeScreen .controls { gap: 9px; }
+        body.reading-mode #homeScreen .grid-item { padding: 10px; }
+        body.reading-mode #homeScreen .pdf-cover { width: 34px; height: 44px; }
+
+        .toolbar {
+            min-height: 53px;
+            box-sizing: border-box;
+            padding: 8px 16px;
+            gap: 7px;
+            border-bottom-color: var(--line);
+            box-shadow: 0 2px 10px rgba(24,43,58,.04);
+        }
+        .close-btn {
+            padding: 7px 10px;
+            margin-right: 5px;
+            border: 1px solid #e2c1bf;
+            border-radius: 8px;
+            color: #9a3d37;
+            background: #fff8f7;
+            font-size: 13px;
+        }
+        .close-btn:hover { color: #fff; background: #9a3d37; }
+        .tool-btn {
+            padding: 7px 10px;
+            border-color: transparent;
+            border-radius: 8px;
+            color: var(--ink-soft);
+            background: transparent;
+            font-size: 13px;
+        }
+        .tool-btn:hover { background: #eef4f2; }
+        .tool-btn.active { border-color: #b9d8ce; color: var(--accent-deep); background: var(--accent-pale); }
+        .toolbar-title { margin-left: 2px; color: var(--ink); font-size: 13px; font-weight: 750; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .toolbar-meta { margin-left: auto; display: flex; align-items: center; gap: 12px; min-width: 0; }
+        #pageInfo { overflow: hidden; color: var(--ink-soft) !important; font-size: 12px; font-weight: 600 !important; text-overflow: ellipsis; white-space: nowrap; }
+        .eraser-sub-options { border-color: #efcfad; border-radius: 8px; background: var(--warning-pale); }
+        .sub-tool-btn { border-color: #e0b576; color: #805116; }
+        .sub-tool-btn.active { border-color: var(--warning); background: var(--warning); }
+        .reader-body { width: 100%; min-width: 0; }
+        .pdf-viewer-container { width: 0; min-width: 0; overflow: auto; padding: 30px; gap: 26px; background: #e7edeb; }
+        .pdf-page-wrapper { box-shadow: 0 10px 25px rgba(24,43,58,.18); }
+        .notes-panel { width: 390px; flex: 0 0 390px; padding: 0; border-left-color: var(--line); overflow: hidden; }
+        .notes-panel.collapsed { flex-basis: 0; }
+        .inspector-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
+            padding: 12px 14px;
+            border-bottom: 1px solid var(--line);
+            background: #fbfcfb;
+        }
+        .inspector-tabs { display: flex; gap: 4px; padding: 3px; border: 1px solid var(--line); border-radius: 9px; background: #fff; }
+        .inspector-tab {
+            border: 0;
+            border-radius: 6px;
+            padding: 6px 10px;
+            color: var(--ink-soft);
+            background: transparent;
+            cursor: pointer;
+            font: inherit;
+            font-size: 12px;
+            font-weight: 750;
+        }
+        .inspector-tab.active { color: #fff; background: var(--ink); }
+        .inspector-tab:focus-visible { outline: 3px solid rgba(11,107,98,.22); outline-offset: 1px; }
+        .json-open-link {
+            flex: 0 0 auto;
+            color: var(--accent-deep);
+            font-size: 11px;
+            font-weight: 750;
+            text-decoration: none;
+        }
+        .json-open-link[hidden] { display: none; }
+        .json-open-link:hover { text-decoration: underline; }
+        .inspector-pane { flex: 1; min-height: 0; overflow-y: auto; padding: 16px; }
+        .inspector-pane[hidden] { display: none; }
+        body.case-note-mode #jsonTab,
+        body.case-note-mode #jsonOpenLink,
+        body.case-note-mode #jsonPane { display: none !important; }
+        /* 第二步閱讀頁只使用擷取筆記，不需要再顯示黑色的分頁按鈕。 */
+        body.case-note-mode .inspector-header { display: none !important; }
+        body.case-note-mode #notesPane { display: block; }
+        .inspector-pane-title { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 14px; }
+        .inspector-pane-title h2 { margin: 0; color: var(--ink); font-size: 15px; }
+        .json-status {
+            display: inline-flex;
+            align-items: center;
+            border-radius: 999px;
+            padding: 4px 8px;
+            color: #657780;
+            background: #eef2f2;
+            font-size: 10px;
+            font-weight: 800;
+        }
+        .json-status.is-complete { color: #2f7654; background: #e7f4ec; }
+        .json-status.is-warning { color: #8a672a; background: #fff4d8; }
+        .json-status.is-loading { color: var(--accent-deep); background: var(--accent-pale); }
+        .json-status.is-error { color: #9d3c43; background: #fff0f0; }
+        .json-empty {
+            margin-top: 34px;
+            padding: 20px 16px;
+            border: 1px dashed #cfdad7;
+            border-radius: 12px;
+            color: #76868f;
+            background: #fbfcfc;
+            font-size: 13px;
+            line-height: 1.7;
+            text-align: center;
+        }
+        .json-empty strong { display: block; margin-bottom: 5px; color: var(--ink); font-size: 14px; }
+        .json-validation-warning { margin-top: 0; margin-bottom: 12px; border-color: #ead39c; color: #7b642d; background: #fffaf0; text-align: left; }
+        .json-overview { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-bottom: 12px; }
+        .json-overview-item { padding: 10px; border: 1px solid #e0e9e7; border-radius: 9px; background: #fbfdfc; }
+        .json-overview-label { display: block; margin-bottom: 5px; color: #7c8b93; font-size: 10px; font-weight: 800; }
+        .json-overview-value { color: var(--ink); font-size: 12px; font-weight: 750; line-height: 1.45; word-break: break-word; }
+        .json-section { margin-bottom: 9px; border: 1px solid #dde7e4; border-radius: 10px; background: #fff; overflow: hidden; }
+        .json-section > summary {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 8px;
+            padding: 10px 12px;
+            color: var(--ink);
+            background: #f6f9f8;
+            cursor: pointer;
+            font-size: 12px;
+            font-weight: 800;
+            list-style: none;
+        }
+        .json-section > summary::-webkit-details-marker { display: none; }
+        .json-section > summary::after { content: "＋"; color: var(--accent); font-size: 13px; }
+        .json-section[open] > summary::after { content: "－"; }
+        .json-section-count { color: #7b8c94; font-size: 10px; font-weight: 700; }
+        .json-section-body { padding: 11px; }
+        .json-field { display: grid; grid-template-columns: 76px minmax(0, 1fr); gap: 8px; padding: 7px 0; border-bottom: 1px solid #edf1f0; }
+        .json-field:last-child { border-bottom: 0; }
+        .json-field-key { color: #74858d; font-size: 11px; font-weight: 750; }
+        .json-field-value { color: #314754; font-size: 12px; line-height: 1.6; white-space: pre-wrap; word-break: break-word; }
+        .json-field.is-unrecognized { padding: 3px 0; border-bottom: 0; opacity: .62; }
+        .json-field.is-unrecognized .json-field-key,
+        .json-field.is-unrecognized .json-field-value { color: #8f9ca2; font-size: 10px; font-weight: 500; font-style: italic; }
+        .json-hierarchy-node { padding: 10px 10px 10px 12px; border-left: 3px solid #9bc5ba; border-radius: 0 8px 8px 0; background: #f8fbfa; }
+        .json-hierarchy-node + .json-hierarchy-node { margin-top: 8px; }
+        .json-node-heading { display: flex; align-items: center; gap: 7px; margin-bottom: 6px; }
+        .json-node-number { display: inline-grid; place-items: center; min-width: 24px; height: 22px; padding: 0 6px; border-radius: 6px; color: #fff; background: var(--accent); font-size: 10px; font-weight: 800; }
+        .json-node-level { color: #7c8c93; font-size: 10px; font-weight: 700; }
+        .json-node-content { margin: 0; color: #314754; font-size: 12px; line-height: 1.65; white-space: pre-wrap; word-break: break-word; }
+        .json-node-children { display: grid; gap: 8px; margin-top: 9px; padding-left: 11px; border-left: 1px dashed #bfd5cf; }
+        #notesPane h2 { margin: 0 0 14px; padding-bottom: 12px; border-bottom: 1px solid var(--line); color: var(--ink); font-size: 15px; }
+        #notesPane h2::after { display: inline-block; width: 6px; height: 6px; margin-left: 8px; border-radius: 50%; background: var(--accent); content: ""; vertical-align: middle; }
+        .panel-toggle {
+            width: 24px;
+            min-width: 24px;
+            display: flex;
+            flex: 0 0 24px;
+            align-items: center;
+            justify-content: center;
+            padding: 0;
+            border: 0;
+            border-left: 1px solid #102a43;
+            color: #fff;
+            background: #102a43;
+            cursor: pointer;
+            font: inherit;
+            transition: color .2s ease, background-color .2s ease;
+        }
+        .panel-toggle:hover, .panel-toggle:focus-visible { color: #fff; background: #0f766e; outline: none; }
+        .panel-toggle:focus-visible { outline: 3px solid rgba(15,118,110,.28); outline-offset: -2px; }
+        .note-card { margin-bottom: 10px; padding: 12px; border: 1px solid #eee1a7; border-left: 3px solid #d0aa22; border-radius: 8px; color: #56491b; background: #fffdeb; box-shadow: none; }
+        .note-card strong { color: #876a00; font-size: 12px; }
+        .note-empty { margin-top: 28px; color: #86938e; line-height: 1.7; }
+        .note-card.is-focus { border-color: #a9d5cc; border-left-color: #168276; color: #315b56; background: #f0faf7; box-shadow: 0 5px 14px rgba(22,130,118,.09); }
+        .note-card.is-focus strong { color: #167066; }
+        .note-focus-badge { display: inline-flex; margin-left: 6px; padding: 2px 5px; border-radius: 999px; color: #fff; background: #168276; font-size: 10px; font-weight: 800; font-style: normal; vertical-align: 1px; }
+        .focus-not-found { padding: 12px; border: 1px solid #d9e3e5; border-radius: 8px; background: #f7f9f9; font-style: normal; }
+        .focus-not-found strong { display: block; margin-bottom: 4px; color: #536873; font-size: 13px; }
+        .speech-bubble { border-color: #d0aa22; border-radius: 10px; color: var(--ink); }
+        .speech-bubble::after { border-color: #d0aa22 transparent; }
+        .speech-bubble-header { border-bottom-color: #eee1a7; color: #876a00; }
+
+        /* 閱讀模式：流程欄右側的資料庫側欄 */
+        #readerScreen { left: 412px; width: calc(100% - 412px); }
+        body.reading-mode #homeScreen {
+            left: 88px;
+            width: 324px;
+            height: 100%;
+            overflow-y: auto;
+            padding: 18px 14px 24px;
+            border-right: 1px solid var(--line);
+            background: #fbfcfb;
+            box-shadow: 2px 0 12px rgba(24,43,58,.04);
+        }
+        body.reading-mode #readerScreen {
+            left: 412px;
+            width: calc(100% - 412px);
+            padding-top: 54px;
+            box-sizing: border-box;
+            z-index: 20;
+        }
+        body.reading-mode .toolbar {
+            position: absolute;
+            top: 0;
+            left: -324px;
+            width: calc(100% + 324px);
+            height: 54px;
+            min-height: 54px;
+            padding: 8px 12px;
+            overflow-x: auto;
+            overflow-y: hidden;
+            flex-wrap: nowrap;
+            border-bottom: 1px solid var(--line);
+            background: rgba(255,255,255,.98);
+            box-shadow: 0 3px 14px rgba(24,43,58,.07);
+        }
+        body.reading-mode #homeScreen {
+            top: 54px;
+            height: calc(100% - 54px);
+        }
+        #readerScreen {
+            transition: transform .3s ease, left .3s ease, width .3s ease;
+        }
+        .library-panel-toggle {
+            width: 24px;
+            min-width: 24px;
+            padding: 0;
+            border: 0;
+            border-right: 1px solid #102a43;
+            color: #fff;
+            background: #102a43;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            z-index: 10;
+            transition: color .2s ease, background-color .2s ease;
+        }
+        .library-panel-toggle:hover, .library-panel-toggle:focus-visible { color: #fff; background: #0f766e; outline: none; }
+        .library-panel-toggle:focus-visible { outline: 3px solid rgba(15,118,110,.28); outline-offset: -2px; }
+        #libraryPanelToggleIcon {
+            font-size: 12px;
+            line-height: 1;
+        }
+        body.reading-mode.library-collapsed #homeScreen {
+            width: 0;
+            padding-left: 0;
+            padding-right: 0;
+            border-right: 0;
+            box-shadow: none;
+            overflow: hidden;
+        }
+        body.reading-mode.library-collapsed #readerScreen {
+            left: 88px;
+            width: calc(100% - 88px);
+        }
+        body.reading-mode.library-collapsed .toolbar {
+            left: 0;
+            width: 100%;
+        }
+        @media (min-width: 721px) and (max-width: 1280px) {
+            body.reading-mode #homeScreen {
+                width: 280px;
+            }
+            body.reading-mode #readerScreen {
+                left: 368px;
+                width: calc(100% - 368px);
+            }
+            body.reading-mode .toolbar {
+                left: -280px;
+                width: calc(100% + 280px);
+            }
+            body.reading-mode.library-collapsed #readerScreen {
+                left: 88px;
+                width: calc(100% - 88px);
+            }
+            body.reading-mode.library-collapsed .toolbar {
+                left: 0;
+                width: 100%;
+            }
+            .notes-panel {
+                width: 330px;
+                flex-basis: 330px;
+            }
+            .notes-panel.collapsed { flex-basis: 0; }
+        }
+        body.case-note-mode #homeScreen .upload-section,
+        body.case-note-mode #homeScreen .view-toggle {
+            display: none;
+        }
+        body.case-note-mode #homeScreen .controls {
+            margin: 6px 4px 13px;
+            padding-bottom: 11px;
+        }
+        body.case-note-mode #homeScreen .library-label {
+            color: var(--ink);
+            font-size: 14px;
+        }
+        body.reading-mode.case-note-mode #homeScreen .controls {
+            display: none;
+        }
+        body.reading-mode.case-note-mode #homeScreen .case-sidebar-title-row {
+            display: flex;
+            min-width: 0;
+            align-items: baseline;
+            gap: 9px;
+        }
+        body.reading-mode.case-note-mode #homeScreen .case-sidebar-title-row .library-label {
+            display: inline-flex;
+            flex: 0 0 auto;
+            gap: 5px;
+            margin: 0;
+            color: var(--ink-soft);
+            font-size: 12px;
+            font-weight: 650;
+            white-space: nowrap;
+        }
+        body.reading-mode.case-note-mode #homeScreen .case-sidebar-title-row #fileCount {
+            font-size: inherit;
+        }
+        body.case-note-mode #homeScreen .grid-item {
+            background: #fff;
+        }
+        body.case-note-mode #homeScreen .grid-item.active {
+            border-color: var(--accent);
+            background: var(--accent-pale);
+            box-shadow: inset 3px 0 0 var(--accent);
+        }
+        body.reading-mode #homeScreen .container {
+            max-width: none;
+            margin: 0;
+            padding: 0;
+            background: transparent;
+            box-shadow: none;
+        }
+        body.reading-mode #homeScreen .library-overview-grid {
+            display: none;
+        }
+        body.reading-mode #homeScreen .workspace-header {
+            display: block;
+            min-height: 0;
+            margin: 0 4px 16px;
+            padding: 0 0 14px;
+            border-bottom: 1px solid var(--line);
+        }
+        body.reading-mode #homeScreen .brand-lockup {
+            align-items: center;
+            gap: 10px;
+        }
+        body.reading-mode #homeScreen .brand-mark {
+            width: 34px;
+            height: 34px;
+            border-radius: 10px;
+            font-size: 13px;
+        }
+        body.reading-mode #homeScreen h1 {
+            margin: 0;
+            padding: 0;
+            font-size: 17px;
+            line-height: 1.2;
+        }
+        body.reading-mode #homeScreen .upload-section {
+            grid-template-columns: auto minmax(0, 1fr);
+            gap: 10px;
+            min-height: 0;
+            margin: 0 0 16px;
+            padding: 14px;
+            border: 1px solid var(--line);
+            border-radius: 12px;
+            background: #fff;
+            box-shadow: 0 5px 16px rgba(24,43,58,.04);
+        }
+        body.reading-mode #homeScreen .upload-icon {
+            width: 36px;
+            height: 36px;
+            border-radius: 10px;
+        }
+        body.reading-mode #homeScreen .upload-icon svg { width: 18px; height: 18px; }
+        body.reading-mode #homeScreen .upload-copy h2 { font-size: 13px; }
+        body.reading-mode #homeScreen .upload-description { display: none; }
+        body.reading-mode #homeScreen .upload-btn {
+            grid-column: 1 / -1;
+            width: 100%;
+            box-sizing: border-box;
+            padding: 8px 10px;
+            text-align: center;
+            font-size: 12px;
+        }
+        body.reading-mode #homeScreen .upload-progress { padding: 0 14px 10px; }
+        body.reading-mode #homeScreen .controls {
+            display: block;
+            margin: 0 0 12px;
+            padding: 0 0 12px;
+            border-bottom: 1px solid var(--line);
+        }
+        body.reading-mode #homeScreen .library-label {
+            display: block;
+            margin-bottom: 8px;
+            font-size: 13px;
+        }
+        body.reading-mode #homeScreen .library-actions {
+            width: 100%;
+            flex-direction: column;
+            align-items: stretch;
+            gap: 8px;
+        }
+        body.reading-mode #homeScreen .delete-selection-button,
+        body.reading-mode #homeScreen .cancel-selection-button { width: 100%; }
+        body.reading-mode #homeScreen .library-category {
+            width: 100%;
+            min-width: 0;
+        }
+        body.reading-mode #homeScreen .view-toggle { width: 100%; }
+        body.reading-mode #homeScreen .view-toggle button { flex: 1; padding: 6px 8px; }
+        body.reading-mode #homeScreen .grid-view,
+        body.reading-mode #homeScreen .list-view {
+            grid-template-columns: 1fr;
+            gap: 8px;
+        }
+        body.reading-mode #homeScreen .grid-item,
+        body.reading-mode #homeScreen .list-item {
+            padding: 10px;
+            border-radius: 10px;
+            box-shadow: none;
+        }
+        body.reading-mode #homeScreen .grid-item:hover,
+        body.reading-mode #homeScreen .list-item:hover { transform: none; }
+        body.reading-mode #homeScreen .pdf-cover { width: 34px; height: 44px; }
+        body.reading-mode #homeScreen .pdf-title { font-size: 12px; }
+        body.reading-mode #homeScreen .document-detail { font-size: 10px; }
+        body.reading-mode #homeScreen .empty-state {
+            padding: 28px 12px;
+            border-radius: 10px;
+            font-size: 12px;
+        }
+        body.reading-mode .close-btn {
+            position: relative;
+            z-index: 2;
+            flex: 0 0 auto;
+            white-space: nowrap;
+        }
+
+        button:focus-visible, .upload-btn:focus-visible, .grid-item:focus-visible, .list-item:focus-visible {
+            outline: 3px solid rgba(11,107,98,.25);
+            outline-offset: 2px;
+        }
+        @media (max-width: 720px) {
+            .process-rail { width: 64px; padding-top: 22px; }
+            .process-rail-title { margin-bottom: 24px; }
+            .process-steps { gap: 42px; }
+            .process-step { width: 34px; height: 34px; }
+            .process-step-label { display: none; }
+            #homeScreen { left: 64px; width: calc(100% - 64px); padding: 24px 16px 38px; }
+            .workspace-header { flex-direction: column; gap: 14px; }
+            .workspace-header { min-height: 0; }
+            /* 縮小視窗時保留返回工具平台按鈕，避免使用者失去返回入口 */
+            .workspace-badge {
+                display: inline-flex;
+                align-items: center;
+                align-self: flex-start;
+                width: max-content;
+                max-width: 100%;
+                padding: 8px 11px;
+                font-size: 12px;
+                line-height: 1.3;
+            }
+            .upload-section { grid-template-columns: auto minmax(0,1fr); padding: 20px; }
+            .upload-btn { grid-column: 1 / -1; text-align: center; }
+            .upload-progress { padding: 0 20px 10px; }
+            .upload-progress-header { min-width: 0; }
+            .controls { align-items: center; }
+            #readerScreen, body.reading-mode #readerScreen { left: 64px; width: calc(100% - 64px); }
+            body.reading-mode #homeScreen { left: 64px; width: 0; padding: 0; border: 0; overflow: hidden; }
+            body.reading-mode #readerScreen,
+            body.reading-mode.library-collapsed #readerScreen { left: 64px; width: calc(100% - 64px); }
+            body.reading-mode .toolbar,
+            body.reading-mode.library-collapsed .toolbar { left: 0; width: 100%; padding: 8px; }
+            .library-panel-toggle { display: none; }
+            .toolbar-title { display: none; }
+            .tool-btn { padding: 7px; font-size: 0; }
+            .tool-btn::first-letter { font-size: 15px; }
+            .notes-panel { width: min(340px, 46vw); flex-basis: min(340px, 46vw); padding: 0; }
+            .notes-panel.collapsed { flex-basis: 0; }
+            .inspector-header { padding: 9px; }
+            .inspector-tab { padding: 6px 8px; }
+            .inspector-pane { padding: 11px; }
+            .json-open-link { display: none; }
+            .pdf-viewer-container { padding: 18px 12px; align-items: flex-start; }
+        }
+
+        /* 第一步首頁：批次匯入卡片與資料類別圓餅圖 */
+        .library-overview-grid {
+            display: grid;
+            grid-template-columns: minmax(0, 1.55fr) minmax(300px, .95fr);
+            gap: 20px;
+            margin-bottom: 26px;
+        }
+        .upload-card,
+        .category-chart-card {
+            min-width: 0;
+            padding: 30px 32px;
+            border: 1px solid #d8e4e2;
+            border-radius: 24px;
+            background: #fff;
+            box-shadow: 0 10px 30px rgba(24, 43, 58, .045);
+        }
+        .upload-card-header,
+        .category-chart-header {
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            gap: 16px;
+        }
+        .upload-card-header h2,
+        .category-chart-header h2 {
+            margin: 0;
+            color: var(--ink);
+            font-size: 21px;
+            font-weight: 750;
+            line-height: 1.25;
+            letter-spacing: -.035em;
+        }
+        .upload-card-header p,
+        .category-chart-header p {
+            margin: 5px 0 0;
+            color: var(--ink-soft);
+            font-size: 14px;
+            line-height: 1.65;
+        }
+        .upload-card-header .upload-eyebrow {
+            display: none;
+        }
+        .upload-card .upload-section {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr);
+            justify-items: center;
+            gap: 16px;
+            min-height: 292px;
+            margin: 28px 0 0;
+            padding: 42px 28px;
+            border: 1px dashed #9eb8b7;
+            border-radius: 22px;
+            background: #fff;
+            text-align: center;
+            transition: border-color .2s ease, background-color .2s ease, transform .2s ease;
+        }
+        .upload-card .upload-section:hover,
+        .upload-card .upload-section.is-dragging {
+            border-color: #0f766e;
+            background: #eaf7f3;
+            transform: translateY(-1px);
+        }
+        .upload-card .upload-section.is-uploading {
+            border-color: #0f766e;
+            background: #f3faf7;
+        }
+        .upload-card .upload-section::before {
+            border-radius: inherit;
+            background: linear-gradient(90deg, rgba(141, 202, 181, .62), rgba(224, 242, 235, .82));
+        }
+        .upload-card .upload-copy {
+            max-width: 620px;
+        }
+        .upload-card .upload-copy h2 {
+            margin: 0;
+            color: var(--ink);
+            font-size: 17px;
+            font-weight: 700;
+            line-height: 1.35;
+        }
+        .upload-card .upload-copy .upload-eyebrow { display: none; }
+        .upload-card .upload-description {
+            margin-top: 7px;
+            font-size: 14px;
+            line-height: 1.6;
+        }
+        .upload-card .upload-btn {
+            position: relative;
+            z-index: 3;
+            padding: 9px 14px;
+            border-radius: 8px;
+            font-size: 14px;
+            box-shadow: 0 5px 13px rgba(15, 118, 110, .2);
+        }
+        .category-chart-card {
+            display: flex;
+            min-height: 430px;
+            flex-direction: column;
+        }
+        .category-chart-header h2 { font-size: 21px; font-weight: 750; }
+        .category-chart-count {
+            flex: 0 0 auto;
+            padding: 9px 13px;
+            border-radius: 999px;
+            color: #327c63;
+            background: #eaf6f0;
+            font-size: 12px;
+            font-weight: 800;
+            white-space: nowrap;
+        }
+        .category-chart-body {
+            display: grid;
+            grid-template-columns: minmax(150px, .95fr) minmax(0, 1.05fr);
+            align-items: center;
+            gap: 20px;
+            flex: 1;
+            margin-top: 20px;
+            padding: 18px;
+            border: 1px solid #e6eded;
+            border-radius: 18px;
+            background: #fbfdfc;
+        }
+        #categoryPieChart {
+            display: block;
+            width: 100%;
+            max-width: 220px;
+            height: auto;
+            margin: auto;
+        }
+        .category-chart-legend {
+            display: flex;
+            max-height: 236px;
+            flex-direction: column;
+            gap: 10px;
+            overflow-y: auto;
+            padding-right: 4px;
+        }
+        .category-legend-item {
+            display: grid;
+            grid-template-columns: 10px minmax(0, 1fr) auto;
+            align-items: center;
+            gap: 8px;
+            padding: 6px 8px;
+            border-radius: 8px;
+            color: var(--ink-soft);
+            font-size: 13px;
+            cursor: pointer;
+            transition: color .18s ease, background-color .18s ease, transform .18s ease;
+        }
+        .category-legend-item:hover,
+        .category-legend-item.is-hovered {
+            color: var(--ink);
+            background: #eef8f5;
+            transform: translateX(3px);
+        }
+        .category-legend-dot {
+            width: 9px;
+            height: 9px;
+            border-radius: 50%;
+        }
+        .category-legend-name {
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .category-legend-value {
+            color: var(--ink);
+            font-variant-numeric: tabular-nums;
+            font-weight: 750;
+        }
+        .category-chart-empty {
+            grid-column: 1 / -1;
+            color: #8c9aa2;
+            font-size: 15px;
+            line-height: 1.7;
+            text-align: center;
+        }
+        body.case-note-mode #categoryChartCard { display: none; }
+        @media (max-width: 930px) {
+            .library-overview-grid { grid-template-columns: 1fr; }
+            .category-chart-card { min-height: 0; }
+        }
+        @media (max-width: 560px) {
+            .upload-card, .category-chart-card { padding: 22px 18px; border-radius: 18px; }
+            .upload-card .upload-section { min-height: 250px; padding: 30px 18px; }
+            .category-chart-body { grid-template-columns: 1fr; }
+            #categoryPieChart { max-width: 180px; }
+        }
+    </style>
+</head>
+<body>
+
+    <aside class="process-rail" aria-label="訴願書判決工作流程">
+        <p class="process-rail-title">流程</p>
+        <nav class="process-steps" aria-label="工作步驟">
+            <a class="process-step active" data-step="1" href="/data-library" aria-current="step">
+                01<span class="process-step-label">匯入歷史資料</span>
+            </a>
+            <a class="process-step" data-step="2" href="/case-analysis">
+                02<span class="process-step-label">分析主要爭議點</span>
+            </a>
+            <a class="process-step" data-step="3" href="/decision-recommendation">
+                03<span class="process-step-label">生成判決建議</span>
+            </a>
+        </nav>
+    </aside>
+
+    <!-- ==================== 區塊一：首頁與檔案管理 ==================== -->
+    <div id="homeScreen">
+        <div class="container">
+            <header class="workspace-header">
+                <div class="brand-lockup">
+                    <div class="brand-mark" aria-hidden="true">01</div>
+                    <div>
+                        <h1>資料庫工作區</h1>
+                        <p class="workspace-subtitle">匯入歷史訴願書與相關法律資料；上傳後可閱讀、標註並擷取 PDF 重點。</p>
+                    </div>
+                </div>
+                <a class="workspace-badge" href="/">← 返回工具平台</a>
+            </header>
+
+            <div class="library-overview-grid">
+                <!-- 批次匯入區：保留原本的 dropZone、fileInput 與進度元件，僅重新配置外觀。 -->
+                <section class="upload-card" aria-labelledby="uploadCardTitle">
+                    <header class="upload-card-header">
+                        <div>
+                            <p class="upload-eyebrow" id="uploadCardEyebrow">歷史資料匯入</p>
+                            <h2 id="uploadCardTitle">批次匯入歷史訴願書</h2>
+                            <p id="uploadCardDescription">一次加入多份歷史資料，後續可依年度與法律類別檢視。</p>
+                        </div>
+                    </header>
+                    <section class="upload-section" id="dropZone" aria-labelledby="uploadTitle">
+                        <div class="upload-copy">
+                            <h2 id="uploadTitle">將歷史訴願書放到這裡</h2>
+                            <p class="upload-description" id="uploadDescription">支援多份 PDF；上傳後會自動轉成 TXT 與階層式 JSON。</p>
+                        </div>
+                        <input type="file" id="fileInput" multiple accept=".pdf">
+                        <label for="fileInput" class="upload-btn" id="uploadButtonLabel">選擇決定書 PDF</label>
+                        <div class="upload-progress" id="uploadProgress" hidden aria-live="polite">
+                            <div class="upload-progress-header">
+                                <span id="uploadProgressLabel">準備上傳檔案</span>
+                                <span class="upload-progress-percent" id="uploadProgressPercent">0%</span>
+                            </div>
+                            <div
+                                class="upload-progress-track"
+                                id="uploadProgressTrack"
+                                role="progressbar"
+                                aria-label="PDF 上傳進度"
+                                aria-valuemin="0"
+                                aria-valuemax="100"
+                                aria-valuenow="0"
+                            >
+                                <span class="upload-progress-fill" id="uploadProgressFill"></span>
+                            </div>
+                        </div>
+                    </section>
+                </section>
+
+                <!-- 圓餅圖由 JavaScript 依目前資料庫內容即時繪製。 -->
+                <section class="category-chart-card" id="categoryChartCard" aria-labelledby="categoryChartTitle">
+                    <header class="category-chart-header">
+                        <div>
+                            <h2 id="categoryChartTitle">資料類別組成</h2>
+                            <p>依目前選取的資料範圍統計法律類別。</p>
+                        </div>
+                        <span class="category-chart-count" id="categoryChartCount">0 份資料</span>
+                    </header>
+                    <div class="category-chart-body">
+                        <canvas id="categoryPieChart" width="240" height="240" aria-label="資料類別組成圓餅圖"></canvas>
+                        <div class="category-chart-legend" id="categoryChartLegend" aria-live="polite"></div>
+                    </div>
+                </section>
+            </div>
+
+            <!-- 控制列 -->
+            <div class="controls">
+                <div class="library-label">文件庫 <span id="fileCount">共 0 個檔案</span></div>
+                <div class="library-actions">
+                    <input type="hidden" id="libraryCategory" value="歷史訴願決定書">
+                    <select class="library-category library-year" id="libraryYear" aria-label="依年度篩選資料" disabled>
+                        <option value="all">所有年份</option>
+                    </select>
+                    <select class="library-category library-law" id="libraryLaw" aria-label="依法律類別篩選資料" disabled>
+                        <option value="all">所有法律類別</option>
+                    </select>
+                    <div class="view-toggle">
+                        <!-- onclick="window.switchView('grid')"：當點擊按鈕時，執行 JavaScript 的切換函式 -->
+                        <button id="btnGrid" class="active" onclick="window.switchView('grid')" aria-label="切換為卡片檢視">卡片</button>
+                        <button id="btnList" onclick="window.switchView('list')" aria-label="切換為列表檢視">列表</button>
+                    </div>
+                    <button id="deleteSelectionButton" class="delete-selection-button" type="button" onclick="window.handleDeleteSelection()">選取刪除</button>
+                    <button id="cancelSelectionButton" class="cancel-selection-button" type="button" onclick="window.cancelDeleteSelection()" hidden>取消</button>
+                </div>
+            </div>
+
+            <!-- 檔案列表顯示區：這裡面一開始是空的，JavaScript 拿到檔案後會動態產生內容塞進來 -->
+            <div id="gridView" class="grid-view"></div>
+            <div id="listView" class="list-view hidden"></div>
+            <div id="emptyState" class="empty-state">目前沒有上傳任何 PDF 檔案</div>
+        </div>
+    </div>
+
+    <!-- ==================== 區塊二：閱讀與筆記區 ==================== -->
+    <div id="readerScreen">
+        <!-- 頂部工具列 -->
+        <div class="toolbar">
+            <button class="close-btn" onclick="window.closeReader()" aria-label="回到資料庫主頁">← 回到資料庫主頁</button>
+            <button class="tool-btn active" id="btnMouse" onclick="window.setTool('mouse')" aria-label="滑鼠模式">🖱️ 滑鼠</button>
+            <button class="tool-btn" id="btnHighlight" onclick="window.setTool('highlight')" aria-label="反白擷取模式">▰ 反白擷取</button>
+            <button class="tool-btn" id="btnEraser" onclick="window.setTool('eraser')" aria-label="橡皮擦模式">🧽 橡皮擦</button>
+
+            <!-- 橡皮擦專屬的次選單 -->
+            <div class="eraser-sub-options" id="eraserOptions">
+                <span style="font-size: 12px; color: #d32f2f; font-weight: bold;">模式:</span>
+                <button class="sub-tool-btn active" id="btnEraserBlock" onclick="window.setEraserMode('block')">整段刪除</button>
+                <button class="sub-tool-btn" id="btnEraserLine" onclick="window.setEraserMode('line')">單行/局部刪除</button>
+            </div>
+
+            <!-- 右上角的載入動畫與頁數資訊 -->
+            <div class="toolbar-meta">
+                <div class="loader" id="loader"></div>
+                <span id="pageInfo" style="font-weight: bold; color: #555;"></span>
+            </div>
+        </div>
+
+        <!-- 閱讀主體 (左邊 PDF，右邊筆記) -->
+        <div class="reader-body">
+            <!-- 收合／展開左側資料庫工作區；收合後 PDF 區會自動補滿空間。 -->
+            <button
+                class="library-panel-toggle"
+                id="libraryPanelToggle"
+                type="button"
+                onclick="window.toggleLibraryPanel()"
+                title="收合／展開資料庫工作區"
+                aria-label="收合資料庫工作區"
+                aria-expanded="true"
+            >
+                <span id="libraryPanelToggleIcon" aria-hidden="true">◀</span>
+            </button>
+
+            <!-- PDF 每一頁的畫布會被 JavaScript 動態塞入這裡 -->
+            <div class="pdf-viewer-container" id="viewerContainer"></div>
+
+            <!-- 💡 新增：用來收合/展開筆記面板的控制把手 -->
+            <button class="panel-toggle" id="panelToggle" type="button" onclick="window.toggleNotesPanel()" title="收合／展開筆記側欄" aria-label="收合筆記側欄" aria-expanded="true">
+                <span id="panelToggleIcon">▶</span>
+            </button>
+
+            <!-- 第一步提供階層式 JSON；第二步案件閱讀頁只提供擷取筆記。 -->
+            <div class="notes-panel" id="notesPanel">
+                <div class="inspector-header">
+                    <div class="inspector-tabs" role="tablist" aria-label="文件檢視內容">
+                        <button class="inspector-tab active" id="jsonTab" type="button" role="tab" aria-selected="true" aria-controls="jsonPane" onclick="window.setInspectorTab('json')">JSON 結構</button>
+                        <button class="inspector-tab" id="notesTab" type="button" role="tab" aria-selected="false" aria-controls="notesPane" onclick="window.setInspectorTab('notes')">擷取筆記</button>
+                    </div>
+                    <a class="json-open-link" id="jsonOpenLink" href="#" target="_blank" rel="noopener" hidden>開啟原始 JSON</a>
+                </div>
+                <section class="inspector-pane" id="jsonPane" role="tabpanel" aria-labelledby="jsonTab">
+                    <div class="inspector-pane-title">
+                        <h2>結構化資料</h2>
+                        <span class="json-status" id="jsonStatus">等待文件</span>
+                    </div>
+                    <div id="jsonContainer">
+                        <div class="json-empty"><strong>尚未選擇文件</strong>開啟歷史訴願決定書後，這裡會顯示轉換完成的巢狀 JSON。</div>
+                    </div>
+                </section>
+                <section class="inspector-pane" id="notesPane" role="tabpanel" aria-labelledby="notesTab" hidden>
+                    <h2>擷取筆記</h2>
+                    <div id="notesContainer">
+                        <div class="note-empty">使用反白擷取重點文字<br>擷取內容會自動出現在這裡</div>
+                    </div>
+                </section>
+            </div>
+        </div>
+        <!-- 懸浮提示卡片 (Tooltip) -->
+        <div id="highlightTooltip" class="highlight-tooltip"></div>
+    </div>
+
+    <!-- ==================== JavaScript 程式碼與邏輯控制 ==================== -->
+    <script>
+        // 設定 PDF.js 所需的 Worker 腳本 (Worker 是在背景執行的程式碼，不會讓主網頁卡住)
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+        // --- 1. 抓取 HTML 畫面上的重要元素，存入常數 (const) 中，方便後續操控 ---
+        const fileInput = document.getElementById('fileInput'); // 檔案上傳輸入框
+        const gridView = document.getElementById('gridView'); // 網格顯示區
+        const listView = document.getElementById('listView'); // 列表顯示區
+        const fileCountSpan = document.getElementById('fileCount'); // 檔案數量文字
+        const emptyState = document.getElementById('emptyState'); // 「目前沒有檔案」文字
+        const viewerContainer = document.getElementById('viewerContainer'); // PDF 畫布容器
+        const notesContainer = document.getElementById('notesContainer'); // 筆記卡片容器
+        const jsonContainer = document.getElementById('jsonContainer');
+        const jsonStatus = document.getElementById('jsonStatus');
+        const jsonPane = document.getElementById('jsonPane');
+        const notesPane = document.getElementById('notesPane');
+        const jsonTab = document.getElementById('jsonTab');
+        const notesTab = document.getElementById('notesTab');
+        const jsonOpenLink = document.getElementById('jsonOpenLink');
+        const loader = document.getElementById('loader'); // 轉圈圈動畫
+        const pageInfo = document.getElementById('pageInfo'); // 頁數資訊
+        const uploadProgress = document.getElementById('uploadProgress');
+        const uploadProgressLabel = document.getElementById('uploadProgressLabel');
+        const uploadProgressPercent = document.getElementById('uploadProgressPercent');
+        const uploadProgressTrack = document.getElementById('uploadProgressTrack');
+        const uploadProgressFill = document.getElementById('uploadProgressFill');
+        const libraryCategorySelect = document.getElementById('libraryCategory');
+        const libraryYearSelect = document.getElementById('libraryYear');
+        const libraryLawSelect = document.getElementById('libraryLaw');
+        const deleteSelectionButton = document.getElementById('deleteSelectionButton');
+        const cancelSelectionButton = document.getElementById('cancelSelectionButton');
+        const uploadCardEyebrow = document.getElementById('uploadCardEyebrow');
+        const uploadCardTitle = document.getElementById('uploadCardTitle');
+        const uploadCardDescription = document.getElementById('uploadCardDescription');
+        const uploadTitle = document.getElementById('uploadTitle');
+        const uploadDescription = document.getElementById('uploadDescription');
+        const uploadButtonLabel = document.getElementById('uploadButtonLabel');
+        const categoryPieChart = document.getElementById('categoryPieChart');
+        const categoryChartLegend = document.getElementById('categoryChartLegend');
+        const categoryChartCount = document.getElementById('categoryChartCount');
+        const pageParams = new URLSearchParams(window.location.search);
+        const isCaseNoteMode = window.location.pathname === '/case-notes';
+        if (isCaseNoteMode) document.body.classList.add('case-note-mode');
+        const libraryStorageKey = 'data-library-files';
+        const libraryCategoryStorageKey = 'data-library-category';
+        const libraryYearStorageKey = 'data-library-year';
+        const libraryLawStorageKey = 'data-library-law';
+        const defaultLibraryCategory = '歷史訴願決定書';
+
+        // --- 2. 宣告全域變數 (let)，用來記錄程式執行的各種狀態 ---
+        let uploadedFiles = []; // 陣列：存儲使用者上傳的所有檔案物件資訊
+        let currentTool = 'mouse'; // 字串：紀錄當前選用的工具 (mouse, highlight, eraser)
+        let eraserMode = 'block'; // 字串：紀錄橡皮擦的模式 (block 刪除整段, line 刪除單行)
+        let activeFileId = null; // 字串/空值：紀錄目前正在閱讀的 PDF 的專屬 ID
+        let pdfDoc = null; // 物件：用來存放 PDF.js 解析完畢的文件實體
+        let activeBubbles = []; // 追蹤畫面上開著的對話框
+        let uploadProgressTimer = null;
+        let activeLibraryCategory = defaultLibraryCategory;
+        let activeLibraryYear = 'all';
+        let activeLibraryLaw = 'all';
+        let jsonRequestSequence = 0;
+        let isDeleteSelectionMode = false;
+        let selectedFileIds = new Set();
+        let hoveredCategorySliceIndex = -1;
+        let categoryChartEntries = [];
+        let categoryChartTotal = 0;
+        let pendingFocusRequest = null;
+
+        const uploadCopyByCategory = {
+            '司法院釋字及行政判解': {
+                eyebrow: '判解資料匯入',
+                cardTitle: '批次匯入司法院釋字及行政判解',
+                cardDescription: '一次加入多份判解資料，後續可依文件逐一閱讀與比對。',
+                dropTitle: '將司法院釋字及行政判解放到這裡',
+                dropDescription: '支援多份 PDF；上傳後會自動轉成 TXT 與階層式 JSON。',
+                button: '選擇判解 PDF'
+            },
+            '行政函釋': {
+                eyebrow: '函釋資料匯入',
+                cardTitle: '批次匯入行政函釋',
+                cardDescription: '一次加入多份行政函釋，後續可依文件逐一閱讀與比對。',
+                dropTitle: '將行政函釋放到這裡',
+                dropDescription: '支援多份 PDF；上傳後會自動轉成 TXT 與階層式 JSON。',
+                button: '選擇函釋 PDF'
+            },
+            '相關法規': {
+                eyebrow: '法規資料匯入',
+                cardTitle: '批次匯入相關法規',
+                cardDescription: '一次加入多份法規資料，後續可依文件逐一閱讀與比對。',
+                dropTitle: '將相關法規放到這裡',
+                dropDescription: '支援多份 PDF；上傳後會自動轉成 TXT 與階層式 JSON。',
+                button: '選擇法規 PDF'
+            },
+            '歷史訴願決定書': {
+                eyebrow: '歷史資料匯入',
+                cardTitle: '批次匯入歷史訴願決定書',
+                cardDescription: '一次加入多份歷史資料，後續可依年度與法律類別檢視。',
+                dropTitle: '將歷史訴願決定書放到這裡',
+                dropDescription: '支援多份 PDF；上傳後會自動轉成 TXT 與階層式 JSON。',
+                button: '選擇決定書 PDF'
+            }
+        };
+
+        function updateUploadCopy() {
+            const copy = uploadCopyByCategory[activeLibraryCategory] || uploadCopyByCategory[defaultLibraryCategory];
+            if (uploadCardEyebrow) uploadCardEyebrow.textContent = copy.eyebrow;
+            if (uploadCardTitle) uploadCardTitle.textContent = copy.cardTitle;
+            if (uploadCardDescription) uploadCardDescription.textContent = copy.cardDescription;
+            if (uploadTitle) uploadTitle.textContent = copy.dropTitle;
+            if (uploadDescription) uploadDescription.textContent = copy.dropDescription;
+            if (uploadButtonLabel) uploadButtonLabel.textContent = copy.button;
+        }
+
+        // 核心資料庫：這是一個「物件 (Object)」，用來分類存儲每一頁的筆記資料。
+        // 格式長這樣：{ "1": [{id: 'note_123', rects: [...], text: '你好'}], "2": [...] }
+        let annotations = {};
+
+        function restoreLibraryFiles() {
+            try {
+                const savedFiles = JSON.parse(sessionStorage.getItem(libraryStorageKey) || '[]');
+                if (!Array.isArray(savedFiles)) return [];
+                return savedFiles.filter(file => (
+                    file && file.id && file.name && typeof file.url === 'string' && file.url.startsWith('/uploads/')
+                )).map(file => ({
+                    ...file,
+                    category: file.category || defaultLibraryCategory,
+                    year: file.year || '',
+                    fileNumber: file.fileNumber || '',
+                    lawCategory: file.lawCategory || ''
+                }));
+            } catch (_error) {
+                return [];
+            }
+        }
+
+        function saveLibraryFiles() {
+            if (isCaseNoteMode) return;
+            const savedFiles = uploadedFiles
+                .filter(file => typeof file.url === 'string' && file.url.startsWith('/uploads/'))
+                .map(file => ({
+                    id: file.id,
+                    name: file.name,
+                    size: file.size,
+                    url: file.url,
+                    category: file.category || defaultLibraryCategory,
+                    year: file.year || '',
+                    fileNumber: file.fileNumber || '',
+                    lawCategory: file.lawCategory || '',
+                    documentId: file.documentId || null,
+                    txtName: file.txtName || null,
+                    txtUrl: file.txtUrl || null,
+                    jsonUrl: file.jsonUrl || null,
+                    processingStatus: file.processingStatus || null,
+                    validationErrors: Array.isArray(file.validationErrors) ? file.validationErrors : [],
+                    parsedSummary: file.parsedSummary || null
+                }));
+            sessionStorage.setItem(libraryStorageKey, JSON.stringify(savedFiles));
+        }
+
+        async function syncHistoricalDocuments() {
+            if (isCaseNoteMode) return;
+            try {
+                const response = await fetch(`/api/library/documents?category=${encodeURIComponent(defaultLibraryCategory)}`);
+                const result = await response.json();
+                if (!response.ok) throw new Error(result.error || `HTTP ${response.status}`);
+
+                const serverFiles = (Array.isArray(result.files) ? result.files : []).map(file => ({
+                    id: `library-${file.document_id}`,
+                    name: file.display_name,
+                    size: formatBytes(file.pdf_size || 0),
+                    url: file.pdf_url,
+                    category: file.category || defaultLibraryCategory,
+                    year: file.year || '',
+                    fileNumber: file.file_number || '',
+                    lawCategory: file.law_category || '',
+                    documentId: file.document_id,
+                    txtName: file.txt_name || null,
+                    txtUrl: file.txt_url || null,
+                    jsonUrl: file.json_url || null,
+                    processingStatus: file.processing_status || 'completed',
+                    validationErrors: Array.isArray(file.validation_errors) ? file.validation_errors : [],
+                    parsedSummary: file.parsed_summary || null
+                }));
+
+                const serverDocumentIds = new Set(serverFiles.map(file => file.documentId));
+                const localOnlyFiles = uploadedFiles.filter(file => !file.documentId || !serverDocumentIds.has(file.documentId));
+                uploadedFiles = [...serverFiles, ...localOnlyFiles];
+                selectedFileIds = new Set([...selectedFileIds].filter(id => uploadedFiles.some(file => file.id === id)));
+                saveLibraryFiles();
+                refreshYearSelect();
+                refreshLawSelect();
+                updateDisplays();
+            } catch (error) {
+                console.error('歷史資料庫同步失敗:', error);
+            }
+        }
+
+        function normalizeLibraryFilename(filename) {
+            return String(filename || '')
+                .trim()
+                .replace(/(?:\.pdf)?\s*的副本(?=\.pdf$)/i, '');
+        }
+
+        function getFileYear(file) {
+            if (file.year) return String(file.year);
+            const matched = String(file.name || '').match(/(?:^|\.)\s*(\d{2,3})\s*年/);
+            return matched ? matched[1] : '';
+        }
+
+        function getFileNumber(file) {
+            if (file.fileNumber) return String(file.fileNumber);
+            const matched = String(file.name || '').match(/^\s*(\d+)/);
+            return matched ? matched[1] : '';
+        }
+
+        function getLawCategory(file) {
+            if (file.lawCategory) return String(file.lawCategory);
+            const matched = String(file.name || '').match(/-(.+?)事件(?:-|\.pdf|$)/i);
+            return matched ? matched[1].trim() : '未分類';
+        }
+
+        function numericValue(value) {
+            const matched = String(value || '').match(/\d+/);
+            return matched ? Number(matched[0]) : Number.MAX_SAFE_INTEGER;
+        }
+
+        function sortFilesByNumber(files) {
+            return [...files].sort((left, right) => {
+                const numberDifference = numericValue(getFileNumber(left)) - numericValue(getFileNumber(right));
+                if (numberDifference !== 0) return numberDifference;
+                return String(left.name || '').localeCompare(String(right.name || ''), 'zh-Hant');
+            });
+        }
+
+        function refreshYearSelect() {
+            const isHistoricalCategory = activeLibraryCategory === defaultLibraryCategory;
+            const years = [...new Set(
+                uploadedFiles
+                    .filter(file => (file.category || defaultLibraryCategory) === defaultLibraryCategory)
+                    .map(getFileYear)
+                    .filter(Boolean)
+            )].sort((left, right) => numericValue(right) - numericValue(left));
+
+            libraryYearSelect.replaceChildren(new Option('所有年份', 'all'));
+            years.forEach(year => libraryYearSelect.appendChild(new Option(`${year} 年`, year)));
+            libraryYearSelect.disabled = !isHistoricalCategory || years.length === 0;
+
+            if (!years.includes(activeLibraryYear)) activeLibraryYear = 'all';
+            libraryYearSelect.value = activeLibraryYear;
+        }
+
+        function refreshLawSelect() {
+            const isHistoricalCategory = activeLibraryCategory === defaultLibraryCategory;
+            const lawCategories = [...new Set(
+                uploadedFiles
+                    .filter(file => (file.category || defaultLibraryCategory) === defaultLibraryCategory)
+                    .filter(file => activeLibraryYear === 'all' || getFileYear(file) === activeLibraryYear)
+                    .map(getLawCategory)
+                    .filter(Boolean)
+            )].sort((left, right) => left.localeCompare(right, 'zh-Hant'));
+
+            libraryLawSelect.replaceChildren(new Option('所有法律類別', 'all'));
+            lawCategories.forEach(law => libraryLawSelect.appendChild(new Option(law, law)));
+            libraryLawSelect.disabled = !isHistoricalCategory || lawCategories.length === 0;
+            if (!lawCategories.includes(activeLibraryLaw)) activeLibraryLaw = 'all';
+            libraryLawSelect.value = activeLibraryLaw;
+        }
+
+        function getChartFiles() {
+            if (isCaseNoteMode) return [];
+            return uploadedFiles.filter(file => {
+                const sameCategory = (file.category || defaultLibraryCategory) === activeLibraryCategory;
+                const sameYear = activeLibraryYear === 'all' || getFileYear(file) === activeLibraryYear;
+                return sameCategory && sameYear;
+            });
+        }
+
+        function drawCategoryPieChart() {
+            if (!categoryPieChart) return;
+            const entries = categoryChartEntries;
+            const total = categoryChartTotal;
+            const context = categoryPieChart.getContext('2d');
+            const width = categoryPieChart.width;
+            const height = categoryPieChart.height;
+            context.clearRect(0, 0, width, height);
+            context.save();
+            context.translate(width / 2, height / 2);
+            const radius = Math.min(width, height) * .38;
+
+            if (!entries.length || !total) {
+                context.beginPath();
+                context.moveTo(0, 0);
+                context.arc(0, 0, radius, 0, Math.PI * 2);
+                context.closePath();
+                context.fillStyle = '#e9efed';
+                context.fill();
+                context.restore();
+                return;
+            }
+
+            const palette = ['#0f766e', '#79b89e', '#d39a4a', '#6f8fa0', '#b86b6b', '#8b82b8', '#9aaf68', '#cf8061'];
+            let startAngle = -Math.PI / 2;
+            entries.forEach(([category, count], index) => {
+                const endAngle = startAngle + (count / total) * Math.PI * 2;
+                const isHovered = index === hoveredCategorySliceIndex;
+                const middleAngle = (startAngle + endAngle) / 2;
+                const sliceOffset = isHovered ? 10 : 0;
+                context.beginPath();
+                context.save();
+                context.translate(Math.cos(middleAngle) * sliceOffset, Math.sin(middleAngle) * sliceOffset);
+                context.moveTo(0, 0);
+                context.arc(0, 0, radius, startAngle, endAngle);
+                context.closePath();
+                context.fillStyle = palette[index % palette.length];
+                if (isHovered) {
+                    context.shadowColor = 'rgba(16, 42, 67, .22)';
+                    context.shadowBlur = 12;
+                    context.shadowOffsetY = 4;
+                }
+                context.fill();
+                context.restore();
+                startAngle = endAngle;
+            });
+            context.restore();
+        }
+
+        function renderCategoryChart() {
+            if (!categoryPieChart || !categoryChartLegend || !categoryChartCount) return;
+
+            const files = getChartFiles();
+            const categoryCounts = new Map();
+            files.forEach(file => {
+                const category = getLawCategory(file) || '未分類';
+                categoryCounts.set(category, (categoryCounts.get(category) || 0) + 1);
+            });
+
+            const entries = [...categoryCounts.entries()].sort((left, right) => {
+                if (right[1] !== left[1]) return right[1] - left[1];
+                return left[0].localeCompare(right[0], 'zh-Hant');
+            });
+            if (hoveredCategorySliceIndex >= entries.length) hoveredCategorySliceIndex = -1;
+            categoryChartEntries = entries;
+            categoryChartTotal = files.length;
+            categoryChartCount.textContent = `${files.length} 份資料`;
+            categoryChartLegend.replaceChildren();
+            drawCategoryPieChart();
+
+            if (!entries.length) {
+                categoryChartLegend.innerHTML = '<p class="category-chart-empty">目前沒有可分析的資料<br>上傳文件後會在這裡顯示類別比例。</p>';
+                return;
+            }
+
+            const palette = ['#0f766e', '#79b89e', '#d39a4a', '#6f8fa0', '#b86b6b', '#8b82b8', '#9aaf68', '#cf8061'];
+            entries.forEach(([category, count], index) => {
+                const isHovered = index === hoveredCategorySliceIndex;
+
+                const legendItem = document.createElement('div');
+                legendItem.className = `category-legend-item${isHovered ? ' is-hovered' : ''}`;
+                legendItem.addEventListener('mouseenter', () => {
+                    hoveredCategorySliceIndex = index;
+                    categoryChartLegend.querySelectorAll('.category-legend-item').forEach((item, itemIndex) => {
+                        item.classList.toggle('is-hovered', itemIndex === index);
+                    });
+                    drawCategoryPieChart();
+                });
+                legendItem.addEventListener('mouseleave', () => {
+                    hoveredCategorySliceIndex = -1;
+                    legendItem.classList.remove('is-hovered');
+                    drawCategoryPieChart();
+                });
+                const dot = document.createElement('span');
+                dot.className = 'category-legend-dot';
+                dot.style.backgroundColor = palette[index % palette.length];
+                const name = document.createElement('span');
+                name.className = 'category-legend-name';
+                name.textContent = category;
+                name.title = category;
+                const value = document.createElement('span');
+                value.className = 'category-legend-value';
+                value.textContent = `${count} 份`;
+                legendItem.append(dot, name, value);
+                categoryChartLegend.appendChild(legendItem);
+            });
+        }
+
+        function confirmAndFilterDuplicateFiles(files) {
+            const selectedNames = new Set();
+            const duplicateNames = [];
+            const filesToUpload = [];
+
+            files.forEach(file => {
+                const normalizedName = normalizeLibraryFilename(file.name);
+                const alreadyExists = uploadedFiles.some(existing => (
+                    (existing.category || defaultLibraryCategory) === activeLibraryCategory
+                    && normalizeLibraryFilename(existing.name) === normalizedName
+                ));
+                const repeatedInSelection = selectedNames.has(normalizedName);
+                selectedNames.add(normalizedName);
+
+                if (alreadyExists || repeatedInSelection) duplicateNames.push(normalizedName);
+                else filesToUpload.push(file);
+            });
+
+            if (!duplicateNames.length) return filesToUpload;
+            const uniqueNames = [...new Set(duplicateNames)];
+            const confirmed = window.confirm(
+                `以下 ${uniqueNames.length} 份文件已上傳過，將略過它們並繼續上傳其他文件：\n\n${uniqueNames.join('\n')}`
+            );
+            return confirmed ? filesToUpload : [];
+        }
+
+        function beginSelectedFiles(files) {
+            const pdfFiles = Array.from(files).filter(file => (
+                file.type === 'application/pdf' || /\.pdf$/i.test(file.name || '')
+            ));
+            const filesToUpload = confirmAndFilterDuplicateFiles(pdfFiles);
+            if (!filesToUpload.length) return;
+            const pendingFiles = handleFiles(filesToUpload);
+            uploadAndConvert(filesToUpload, pendingFiles);
+        }
+
+        libraryCategorySelect.addEventListener('change', () => {
+            activeLibraryCategory = libraryCategorySelect.value;
+            sessionStorage.setItem(libraryCategoryStorageKey, activeLibraryCategory);
+            window.cancelDeleteSelection();
+            updateUploadCopy();
+            refreshYearSelect();
+            refreshLawSelect();
+            updateDisplays();
+        });
+
+        libraryYearSelect.addEventListener('change', () => {
+            activeLibraryYear = libraryYearSelect.value;
+            sessionStorage.setItem(libraryYearStorageKey, activeLibraryYear);
+            window.cancelDeleteSelection();
+            refreshLawSelect();
+            updateDisplays();
+        });
+
+        libraryLawSelect.addEventListener('change', () => {
+            activeLibraryLaw = libraryLawSelect.value;
+            sessionStorage.setItem(libraryLawStorageKey, activeLibraryLaw);
+            updateDisplays();
+        });
+
+        // --- 3. 監聽器 (Event Listener)：當使用者選完檔案後觸發 ---
+        // 當 fileInput 的值改變 (change) 時，把使用者選取的檔案陣列 (e.target.files) 交給 handleFiles 函式處理
+        fileInput.addEventListener('change', function(e) {
+            if (e.target.files.length > 0) {
+                beginSelectedFiles(e.target.files);
+                // 清空 input，讓同一份檔案在之後再次選取時仍會觸發 change。
+                e.target.value = '';
+            }
+        });
+
+        // 處理剛上傳的檔案
+        function handleFiles(files) {
+            if (files.length === 0) return []; // 如果沒選檔案就直接結束函式
+            emptyState.style.display = 'none'; // 隱藏空狀態文字
+            const pendingFiles = [];
+
+            // 使用 for 迴圈逐一檢查上傳的多個檔案
+            for (let i = 0; i < files.length; i++) {
+                // 防呆機制：只處理 MIME 類型為 PDF 的檔案
+                if (files[i].type === 'application/pdf') {
+                    // push(): 把這筆新檔案資料推入 uploadedFiles 陣列中
+                    const pendingFile = {
+                        id: 'file_' + Date.now() + '_' + i, // 利用當下時間 (Date.now()) 產生一組不重複的 ID
+                        name: files[i].name, // 檔案名稱
+                        size: formatBytes(files[i].size), // 轉換檔案大小格式 (呼叫最下方的輔助函式)
+                        category: activeLibraryCategory,
+                        year: getFileYear({ name: files[i].name }),
+                        fileNumber: getFileNumber({ name: files[i].name }),
+                        lawCategory: getLawCategory({ name: files[i].name }),
+                        processingStatus: 'uploading',
+                        jsonUrl: null,
+                        validationErrors: [],
+                        parsedSummary: null,
+
+                        // 🔥 關鍵技術：URL.createObjectURL()
+                        // 瀏覽器將本機檔案轉換成一個 `blob:http://...` 格式的虛擬網址存入記憶體中。
+                        // 這樣 PDF.js 就可以直接拿這個網址去解析，完全不需要真的把檔案上傳到遠端伺服器！
+                        url: URL.createObjectURL(files[i])
+                    };
+                    uploadedFiles.push(pendingFile);
+                    pendingFiles.push(pendingFile);
+                }
+            }
+            updateDisplays(); // 資料準備好了，呼叫函式更新畫面
+            return pendingFiles;
+        }
+
+        // 根據 uploadedFiles 陣列的資料，動態產生 HTML 清單
+        function updateDisplays() {
+            let displayedFiles = isCaseNoteMode
+                ? uploadedFiles
+                : uploadedFiles.filter(file => (file.category || defaultLibraryCategory) === activeLibraryCategory);
+            if (!isCaseNoteMode && activeLibraryCategory === defaultLibraryCategory && activeLibraryYear !== 'all') {
+                displayedFiles = displayedFiles.filter(file => getFileYear(file) === activeLibraryYear);
+            }
+            if (!isCaseNoteMode && activeLibraryCategory === defaultLibraryCategory && activeLibraryLaw !== 'all') {
+                displayedFiles = displayedFiles.filter(file => getLawCategory(file) === activeLibraryLaw);
+            }
+            if (!isCaseNoteMode && activeLibraryCategory === defaultLibraryCategory) {
+                displayedFiles = sortFilesByNumber(displayedFiles);
+            }
+            fileCountSpan.innerText = isCaseNoteMode
+                ? `共 ${displayedFiles.length} 件`
+                : `共 ${displayedFiles.length} 個檔案`; // 更新右上角文字
+            renderCategoryChart();
+            emptyState.style.display = displayedFiles.length > 0 ? 'none' : 'block';
+
+            // 先清空網格和列表容器裡的所有舊 HTML
+            gridView.innerHTML = ''; listView.innerHTML = '';
+            updateDeleteSelectionControls();
+
+            // forEach(): 走訪陣列中的每一個檔案 (file)
+            displayedFiles.forEach(file => {
+                // 三元運算子 (條件 ? 成立 : 不成立)：判斷這個檔案是不是目前正在讀的，是的話加上 active 類別
+                const isActive = file.id === activeFileId ? 'active' : '';
+                const canDelete = Boolean(file.documentId) && !isCaseNoteMode;
+                const isSelected = selectedFileIds.has(file.id);
+                const selectionClass = isDeleteSelectionMode ? 'selection-mode' : '';
+                const selectedClass = isSelected ? 'selected-for-deletion' : '';
+                const notDeletableClass = isDeleteSelectionMode && !canDelete ? 'not-deletable' : '';
+                const actionLabel = isDeleteSelectionMode
+                    ? (canDelete ? `${isSelected ? '取消選取' : '選取'}刪除 ${file.name}` : `${file.name} 無法由此刪除`)
+                    : `開啟 ${file.name}`;
+                const handleFileAction = () => {
+                    if (isDeleteSelectionMode) {
+                        if (canDelete) toggleFileSelection(file);
+                        return;
+                    }
+                    openReader(file);
+                };
+
+                // --- 製作一個網格方塊元件 ---
+                const gridItem = document.createElement('div'); // 在記憶體中創造一個 <div>
+                gridItem.className = `grid-item ${isActive} ${selectionClass} ${selectedClass} ${notDeletableClass}`; // 設定 class
+                gridItem.onclick = handleFileAction; // 選取模式改為勾選，平常才開啟 PDF
+                gridItem.setAttribute('role', 'button');
+                gridItem.setAttribute('tabindex', '0');
+                gridItem.setAttribute('aria-label', actionLabel);
+                gridItem.onkeydown = (event) => {
+                    if (event.key === 'Enter' || event.key === ' ') {
+                        event.preventDefault();
+                        handleFileAction();
+                    }
+                };
+                // 設定內部的 HTML 結構：檔案圖示、名稱與大小資訊
+                gridItem.innerHTML = `<span class="selection-check" aria-hidden="true">✓</span><div class="pdf-cover" aria-hidden="true">PDF</div><div class="document-meta"><div class="pdf-title" title="${escapeHtml(file.name)}">${escapeHtml(file.name)}</div><span class="document-detail">${escapeHtml(getDocumentStatusLabel(file))} · ${file.size}</span></div>`;
+                gridView.appendChild(gridItem); // 把這個做好的元件塞進網格容器裡
+
+                // --- 製作一個列表橫條元件 ---
+                const listItem = document.createElement('div');
+                listItem.className = `list-item ${isActive} ${selectionClass} ${selectedClass} ${notDeletableClass}`;
+                listItem.onclick = handleFileAction;
+                listItem.setAttribute('role', 'button');
+                listItem.setAttribute('tabindex', '0');
+                listItem.setAttribute('aria-label', actionLabel);
+                listItem.onkeydown = (event) => {
+                    if (event.key === 'Enter' || event.key === ' ') {
+                        event.preventDefault();
+                        handleFileAction();
+                    }
+                };
+                listItem.innerHTML = `<span class="selection-check" aria-hidden="true">✓</span><div class="list-icon" aria-hidden="true">PDF</div><div class="list-title" title="${escapeHtml(file.name)}">${escapeHtml(file.name)}</div><div class="list-size">${escapeHtml(getDocumentStatusLabel(file))} · ${file.size}</div>`;
+                listView.appendChild(listItem);
+            });
+        }
+
+        function updateDeleteSelectionControls() {
+            if (!deleteSelectionButton || !cancelSelectionButton) return;
+            if (isCaseNoteMode) {
+                deleteSelectionButton.hidden = true;
+                cancelSelectionButton.hidden = true;
+                return;
+            }
+            deleteSelectionButton.hidden = false;
+            const selectedCount = selectedFileIds.size;
+            deleteSelectionButton.classList.toggle('is-active', isDeleteSelectionMode);
+            deleteSelectionButton.disabled = isDeleteSelectionMode && selectedCount === 0;
+            deleteSelectionButton.textContent = isDeleteSelectionMode
+                ? `刪除已選 ${selectedCount} 份`
+                : '選取刪除';
+            cancelSelectionButton.hidden = !isDeleteSelectionMode;
+        }
+
+        function toggleFileSelection(file) {
+            if (!file.documentId) return;
+            if (selectedFileIds.has(file.id)) selectedFileIds.delete(file.id);
+            else selectedFileIds.add(file.id);
+            updateDisplays();
+        }
+
+        window.cancelDeleteSelection = function() {
+            isDeleteSelectionMode = false;
+            selectedFileIds.clear();
+            updateDisplays();
+        };
+
+        window.handleDeleteSelection = async function() {
+            if (!isDeleteSelectionMode) {
+                isDeleteSelectionMode = true;
+                selectedFileIds.clear();
+                updateDisplays();
+                return;
+            }
+
+            const filesToDelete = uploadedFiles.filter(file => selectedFileIds.has(file.id) && file.documentId);
+            if (!filesToDelete.length) return;
+            const names = filesToDelete.map(file => `• ${file.name}`).join('\n');
+            const confirmed = window.confirm(
+                `即將永久刪除以下 ${filesToDelete.length} 份文件，以及各自的 TXT、JSON 轉檔資料：\n\n${names}\n\n此動作無法復原，確定要刪除嗎？`
+            );
+            if (!confirmed) return;
+
+            deleteSelectionButton.disabled = true;
+            try {
+                const results = await Promise.allSettled(filesToDelete.map(async file => {
+                    const response = await fetch(`/api/library/documents/${encodeURIComponent(file.documentId)}`, { method: 'DELETE' });
+                    const result = await response.json();
+                    if (!response.ok) throw new Error(result.error || `HTTP ${response.status}`);
+                    return file.id;
+                }));
+                const deletedIds = new Set(results.filter(result => result.status === 'fulfilled').map(result => result.value));
+                const failures = results.filter(result => result.status === 'rejected');
+                uploadedFiles = uploadedFiles.filter(file => !deletedIds.has(file.id));
+                selectedFileIds.clear();
+                isDeleteSelectionMode = false;
+                saveLibraryFiles();
+                refreshYearSelect();
+                refreshLawSelect();
+                updateDisplays();
+                if (failures.length) {
+                    window.alert(`有 ${failures.length} 份文件未能刪除：\n${failures.map(result => result.reason.message).join('\n')}`);
+                }
+            } catch (error) {
+                console.error('刪除文件失敗:', error);
+                window.alert(`刪除文件失敗：${error.message}`);
+            } finally {
+                updateDeleteSelectionControls();
+            }
+        };
+
+        // 將檔名或擷取文字轉為安全的 HTML 文字，避免特殊字元被當作標籤執行。
+        function escapeHtml(text) {
+            const element = document.createElement('div');
+            element.textContent = text == null ? '' : String(text);
+            return element.innerHTML;
+        }
+
+        function getDocumentStatusLabel(file) {
+            if (file.processingStatus === 'uploading') return '處理中';
+            if ((file.category || defaultLibraryCategory) !== defaultLibraryCategory) return 'PDF 文件';
+            if (file.processingStatus === 'needs_review') return 'PDF＋JSON 待檢查';
+            if (file.jsonUrl) return 'PDF＋JSON 已完成';
+            return 'PDF 文件';
+        }
+
+        window.setInspectorTab = function(tabName) {
+            const showJson = tabName === 'json';
+            jsonTab.classList.toggle('active', showJson);
+            notesTab.classList.toggle('active', !showJson);
+            jsonTab.setAttribute('aria-selected', String(showJson));
+            notesTab.setAttribute('aria-selected', String(!showJson));
+            jsonPane.hidden = !showJson;
+            notesPane.hidden = showJson;
+        };
+
+        function setJsonStatus(label, state = '') {
+            jsonStatus.textContent = label;
+            jsonStatus.className = `json-status${state ? ` is-${state}` : ''}`;
+        }
+
+        function createJsonField(key, value) {
+            const row = document.createElement('div');
+            row.className = 'json-field';
+
+            const keyElement = document.createElement('div');
+            keyElement.className = 'json-field-key';
+            keyElement.textContent = key;
+
+            const valueElement = document.createElement('div');
+            valueElement.className = 'json-field-value';
+            const displayValue = value == null || value === '' ? '—' : String(value);
+            valueElement.textContent = displayValue;
+            if (displayValue.startsWith('未辨識到')) row.classList.add('is-unrecognized');
+            row.append(keyElement, valueElement);
+            return row;
+        }
+
+        function createHierarchyNode(node, sectionName = '') {
+            const element = document.createElement('article');
+            element.className = 'json-hierarchy-node';
+
+            const heading = document.createElement('div');
+            heading.className = 'json-node-heading';
+            const number = document.createElement('span');
+            number.className = 'json-node-number';
+            number.textContent = node?.['名稱'] || node?.['編號'] || (
+                node?.['層級'] === 0
+                    ? (sectionName === '事實' ? '事實概述' : sectionName === '理由' ? '理由概述' : '前文')
+                    : '未編號'
+            );
+            const level = document.createElement('span');
+            level.className = 'json-node-level';
+            level.textContent = `第 ${node?.['層級'] ?? 0} 層`;
+            heading.append(number, level);
+
+            const content = document.createElement('p');
+            content.className = 'json-node-content';
+            content.textContent = node?.['內容'] || '（此段沒有內容）';
+            element.append(heading, content);
+
+            const children = Array.isArray(node?.['子段落']) ? node['子段落'] : [];
+            if (children.length) {
+                const childContainer = document.createElement('div');
+                childContainer.className = 'json-node-children';
+                children.forEach(child => childContainer.appendChild(createHierarchyNode(child, sectionName)));
+                element.appendChild(childContainer);
+            }
+            return element;
+        }
+
+        function createJsonSection(title, countLabel, open = false) {
+            const details = document.createElement('details');
+            details.className = 'json-section';
+            details.open = open;
+            const summary = document.createElement('summary');
+            const titleElement = document.createElement('span');
+            titleElement.textContent = title;
+            const count = document.createElement('span');
+            count.className = 'json-section-count';
+            count.textContent = countLabel;
+            summary.append(titleElement, count);
+            const body = document.createElement('div');
+            body.className = 'json-section-body';
+            details.append(summary, body);
+            return { details, body };
+        }
+
+        function countHierarchyNodes(nodes) {
+            return (Array.isArray(nodes) ? nodes : []).reduce((total, node) => (
+                total + 1 + countHierarchyNodes(node?.['子段落'])
+            ), 0);
+        }
+
+        function renderJsonDocument(data, validationErrors = []) {
+            jsonContainer.replaceChildren();
+
+            if (validationErrors.length) {
+                const warning = document.createElement('div');
+                warning.className = 'json-empty json-validation-warning';
+                const title = document.createElement('strong');
+                title.textContent = '這份 JSON 需要人工確認';
+                warning.appendChild(title);
+                warning.appendChild(document.createTextNode(validationErrors.join('、')));
+                jsonContainer.appendChild(warning);
+            }
+
+            // 顯示順序固定對齊 JSON 解析器與訴願書原文，不依欄位長短重新排版。
+            const basicFields = createJsonSection('文件基本資料', '依 PDF 順序', true);
+            [
+                ['文件種類', data?.['文件種類']],
+                ['案號', data?.['案號']],
+                ['要旨', data?.['要旨']],
+                ['發文日期', data?.['發文日期']],
+                ['發文字號', data?.['發文字號']]
+            ].forEach(([key, value]) => basicFields.body.appendChild(createJsonField(key, value)));
+            jsonContainer.appendChild(basicFields.details);
+
+            const fullText = createJsonSection('全文', data?.['全文'] ? '原文開頭' : '未提供', true);
+            fullText.body.appendChild(createJsonField('內容', data?.['全文']));
+            jsonContainer.appendChild(fullText.details);
+
+            const mainText = createJsonSection('主文', data?.['主文'] ? '已辨識' : '未辨識', true);
+            mainText.body.appendChild(createJsonField('內容', data?.['主文']));
+            jsonContainer.appendChild(mainText.details);
+
+            ['事實', '理由'].forEach(sectionName => {
+                const nodes = Array.isArray(data?.[sectionName]) ? data[sectionName] : [];
+                const section = createJsonSection(sectionName, `${countHierarchyNodes(nodes)} 個節點`, true);
+                if (!nodes.length) {
+                    section.body.appendChild(createJsonField('解析結果', `未辨識到${sectionName}段落`));
+                } else {
+                    nodes.forEach(node => section.body.appendChild(createHierarchyNode(node, sectionName)));
+                }
+                jsonContainer.appendChild(section.details);
+            });
+
+            // metadata 是系統附加資訊，不屬於 PDF 原文，因此固定放在最下面。
+            const metadata = createJsonSection('系統處理資訊', '非 PDF 原文');
+            Object.entries(data?.metadata || {}).forEach(([key, value]) => metadata.body.appendChild(createJsonField(key, value)));
+            if (!metadata.body.childElementCount) metadata.body.appendChild(createJsonField('狀態', '沒有 metadata'));
+            jsonContainer.appendChild(metadata.details);
+        }
+
+        function resetJsonInspector() {
+            jsonRequestSequence += 1;
+            setJsonStatus('等待文件');
+            jsonOpenLink.hidden = true;
+            jsonOpenLink.removeAttribute('href');
+            jsonContainer.innerHTML = '<div class="json-empty"><strong>尚未選擇文件</strong>開啟歷史訴願決定書後，這裡會顯示轉換完成的巢狀 JSON。</div>';
+        }
+
+        async function loadDocumentJson(fileData) {
+            const requestSequence = ++jsonRequestSequence;
+            if (isCaseNoteMode) {
+                window.setInspectorTab('notes');
+                jsonOpenLink.hidden = true;
+                return;
+            }
+
+            window.setInspectorTab('json');
+            if (!fileData.jsonUrl) {
+                setJsonStatus(fileData.processingStatus === 'uploading' ? '處理中' : '尚未建立', fileData.processingStatus === 'uploading' ? 'loading' : 'warning');
+                jsonOpenLink.hidden = true;
+                jsonContainer.innerHTML = '<div class="json-empty"><strong>目前沒有 JSON</strong>舊有暫存檔或非歷史訴願資料不會自動產生 JSON；請重新上傳歷史訴願決定書。</div>';
+                return;
+            }
+
+            setJsonStatus('讀取中', 'loading');
+            jsonContainer.innerHTML = '<div class="json-empty"><strong>正在讀取結構化資料</strong>PDF 可先在左側閱讀，JSON 完成後會顯示在這裡。</div>';
+            jsonOpenLink.href = fileData.jsonUrl;
+            jsonOpenLink.hidden = false;
+            try {
+                const response = await fetch(fileData.jsonUrl, { headers: { Accept: 'application/json' } });
+                const data = await response.json();
+                if (requestSequence !== jsonRequestSequence) return;
+                if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
+                renderJsonDocument(data, fileData.validationErrors || []);
+                setJsonStatus(
+                    fileData.processingStatus === 'needs_review' ? '待人工確認' : '解析完成',
+                    fileData.processingStatus === 'needs_review' ? 'warning' : 'complete'
+                );
+            } catch (error) {
+                if (requestSequence !== jsonRequestSequence) return;
+                console.error('JSON 載入失敗:', error);
+                setJsonStatus('讀取失敗', 'error');
+                jsonContainer.innerHTML = '<div class="json-empty"><strong>JSON 無法讀取</strong>請確認後端服務與資料檔案仍然存在。</div>';
+            }
+        }
+
+        // 切換檢視模式 (給 HTML 上的「網格/列表」按鈕呼叫的)
+        window.switchView = function(viewType) {
+            if (viewType === 'grid') {
+                // 啟動網格按鈕顏色，取消列表按鈕顏色
+                document.getElementById('btnGrid').classList.add('active');
+                document.getElementById('btnList').classList.remove('active');
+
+                // 顯示網格容器，隱藏列表容器 (操作 classlist)
+                gridView.classList.remove('hidden');
+                listView.classList.add('hidden');
+            } else {
+                document.getElementById('btnList').classList.add('active');
+                document.getElementById('btnGrid').classList.remove('active');
+
+                listView.classList.remove('hidden');
+                gridView.classList.add('hidden');
+            }
+        };
+
+        // 進入閱讀模式的觸發點
+        function openReader(fileData) {
+            activeFileId = fileData.id; // 更新狀態：記住現在看的是哪份文件
+            if (isCaseNoteMode) {
+                sessionStorage.setItem('case-analysis-active-id', fileData.id);
+                const query = new URLSearchParams({ file: fileData.url, name: fileData.name });
+                if (pendingFocusRequest?.text) {
+                    query.set('focus_text', pendingFocusRequest.text);
+                    query.set('focus_exact', pendingFocusRequest.exact ? '1' : '0');
+                    if (pendingFocusRequest.issue) query.set('focus_issue', pendingFocusRequest.issue);
+                    if (pendingFocusRequest.page) query.set('focus_page', String(pendingFocusRequest.page));
+                }
+                window.history.replaceState(null, '', `/case-notes?${query.toString()}`);
+            }
+            updateDisplays(); // 重新整理首頁，讓被點擊的檔案有深色背景 (active)
+
+            // 每次進入閱讀模式時，先展開資料庫工作區，避免沿用上一次的收合狀態。
+            document.body.classList.remove('library-collapsed');
+            const libraryToggle = document.getElementById('libraryPanelToggle');
+            const libraryToggleIcon = document.getElementById('libraryPanelToggleIcon');
+            if (libraryToggle) {
+                libraryToggle.setAttribute('aria-expanded', 'true');
+                libraryToggle.setAttribute('aria-label', isCaseNoteMode ? '收合分析佇列' : '收合資料庫工作區');
+            }
+            if (libraryToggleIcon) libraryToggleIcon.innerText = '◀';
+
+            // 🔥 CSS 機關觸發：在整個網頁 body 加上 reading-mode 這個 class！
+            // 此時 CSS 會發動 transition 動畫，首頁縮小，閱讀區從右側滑入。
+            document.body.classList.add('reading-mode');
+
+            loadDocumentJson(fileData);
+            loadPDF(fileData.url, fileData.name); // 呼叫下方函式，開始解析 PDF 虛擬網址
+        }
+
+        // 關閉閱讀模式 (點擊紅色的叉叉按鈕)
+        window.closeReader = function() {
+            if (isCaseNoteMode) {
+                window.location.href = '/case-analysis';
+                return;
+            }
+
+            activeFileId = null; // 清除狀態
+            updateDisplays();
+
+            // 🔥 解除 CSS 機關：移除 reading-mode，閱讀區退回螢幕外面，首頁重新變大。
+            document.body.classList.remove('reading-mode', 'library-collapsed');
+
+            // 清理閱讀區殘留的內容與記憶體，避免下次點別的檔案時出現重疊
+            viewerContainer.innerHTML = '';
+            notesContainer.innerHTML = '<div class="note-empty">使用反白擷取重點文字<br>擷取內容會自動出現在這裡</div>';
+            resetJsonInspector();
+            annotations = {};
+            pdfDoc = null;
+        };
+
+        // 核心功能：呼叫 PDF.js 解析整個 PDF 文件
+        // async (非同步)：因為讀取大檔案需要時間，加了 async 代表這個函式可以「等」資料。
+        async function loadPDF(url, filename) {
+            try {
+                // 初始化畫面，顯示轉圈圈 (loader)
+                viewerContainer.innerHTML = '';
+                notesContainer.innerHTML = '<div class="note-empty">使用反白擷取重點文字<br>擷取內容會自動出現在這裡</div>';
+                loader.style.display = 'block';
+                pageInfo.innerText = `載入中...`;
+
+                // 🔥 await: 告訴程式在這裡「等」一下。
+                // 讓 PDF.js 去解析那個 url，等它完全解析完畢後，把結果存進 pdfDoc 全域變數中。
+                pdfDoc = await pdfjsLib.getDocument(url).promise;
+
+                // 解析完畢後，我們就可以取得這份文件總共有幾頁 (pdfDoc.numPages)
+                pageInfo.innerText = `${filename} (共 ${pdfDoc.numPages} 頁)`;
+                annotations = {}; // 初始化筆記資料庫為空物件
+
+                // 迴圈：從第 1 頁跑到最後一頁，呼叫 renderPage 函式將每一頁畫出來
+                for (let pageNum = 1; pageNum <= pdfDoc.numPages; pageNum++) {
+                    await renderPage(pageNum); // 等這一頁畫完，再畫下一頁
+                }
+                applyPendingFocusRequest(filename);
+            } catch (err) {
+                console.error('PDF 載入失敗:', err); // 抓取錯誤 (例如檔案損毀)
+                pageInfo.innerText = 'PDF 載入失敗，請重新選擇檔案';
+            } finally {
+                // 不管成功還是失敗，最後 (finally) 都要把轉圈圈隱藏起來
+                loader.style.display = 'none';
+            }
+        }
+
+        // 核心功能：負責把「單一一頁」的 PDF 轉成影像，並擷取隱形文字座標
+        async function renderPage(pageNum) {
+            // 從文件物件中取得該頁的資料
+            const page = await pdfDoc.getPage(pageNum);
+            const scale = 1.5; // 我們希望把 PDF 放大 1.5 倍顯示
+            const viewport = page.getViewport({ scale: scale }); // 取得放大後的長寬尺寸資訊 (viewport)
+
+            // --- 建立網頁元素結構 ---
+            // 1. 建立包裝這一頁的最外層容器 (div)
+            const pageWrapper = document.createElement('div');
+            pageWrapper.className = 'pdf-page-wrapper';
+            pageWrapper.style.width = viewport.width + 'px';
+            pageWrapper.style.height = viewport.height + 'px';
+            pageWrapper.dataset.pageNum = pageNum; // 利用 dataset 藏一個 pageNum 的資料在 HTML 標籤上
+
+            // 2. 建立主要的畫布 (canvas)
+            const canvas = document.createElement('canvas');
+            canvas.width = viewport.width;
+            canvas.height = viewport.height;
+            pageWrapper.appendChild(canvas); // 把 canvas 塞進外層容器中
+
+            // 3. 建立 PDF.js 文字層，讓瀏覽器可使用原生文字選取功能。
+            const textLayer = document.createElement('div');
+            textLayer.className = 'text-layer';
+            textLayer.style.setProperty('--scale-factor', scale);
+            pageWrapper.appendChild(textLayer);
+
+            // 把這整包元件放進主畫面左側的閱讀容器中
+            viewerContainer.appendChild(pageWrapper);
+
+            // --- 渲染畫面 ---
+            // 取得 Canvas 的 2D 繪圖環境 (筆刷)
+            const ctx = canvas.getContext('2d');
+            // 呼叫 PDF.js，把那一頁的視覺畫面畫到我們準備好的 Canvas 上
+            await page.render({ canvasContext: ctx, viewport: viewport }).promise;
+
+            // --- 建立文字層（原生反白與文字擷取都以此為準） ---
+            // getTextContent(): 抓出這頁所有的純文字節點
+            const textContent = await page.getTextContent();
+
+            const textLayerTask = pdfjsLib.renderTextLayer({
+                textContentSource: textContent,
+                textContent,
+                container: textLayer,
+                viewport,
+                textDivs: []
+            });
+            await (textLayerTask.promise || textLayerTask);
+
+            // map(): 走訪所有文字節點，經過複雜的座標矩陣轉換，轉換成網頁能理解的像素座標
+            const textItems = textContent.items.map(item => {
+                const tx = pdfjsLib.Util.transform(viewport.transform, item.transform);
+                const height = Math.abs(tx[3]); // 計算字元高度
+                return {
+                    str: item.str, // 該字元的實際文字內容 (例如 "人", "A")
+                    x: tx[4],      // X 軸座標
+                    y: tx[5] - height, // Y 軸座標 (調整對齊)
+                    w: item.width * scale, // 字元寬度 (配合縮放)
+                    h: height // 字元高度
+                };
+            });
+            // 把這組算好的座標陣列，直接綁定存在 pageWrapper 這個 HTML 元件身上，方便隨時取用
+            pageWrapper.textItems = textItems;
+
+            // --- 建立備份底圖 (為了橡皮擦功能) ---
+            // 因為螢光筆是直接用橘色顏料「畫」在 Canvas 上的，如果畫錯了想擦掉，是無法單獨抹除顏料的。
+            // 解決辦法：建立一個隱藏的 cleanCanvas，把剛讀取完 (還沒畫任何螢光筆) 的乾淨 PDF 畫面存下來。
+            const cleanCanvas = document.createElement('canvas');
+            cleanCanvas.width = viewport.width;
+            cleanCanvas.height = viewport.height;
+            // drawImage(): 把主 Canvas 複製印一份到 cleanCanvas 身上
+            cleanCanvas.getContext('2d').drawImage(canvas, 0, 0);
+            pageWrapper.cleanCanvas = cleanCanvas; // 一樣綁定在 wrapper 身上保管
+
+            // 原生文字層的選取、滑鼠點擊與橡皮擦事件。
+            bindTextLayerEvents(pageWrapper, textLayer, canvas, pageNum);
+        }
+
+        // 輔助繪圖函式：當增加新筆記或刪除舊筆記時，呼叫此函式「重新畫出」該頁面
+        function redrawPage(wrapper, canvas, pageNum) {
+            const ctx = canvas.getContext('2d');
+
+            // 步驟一：用 clearRect 清除整張畫布上的所有內容
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            // 步驟二：從 cleanCanvas 拿出剛剛備份的「乾淨 PDF 底圖」貼上去 (這樣錯的筆記就不見了)
+            ctx.drawImage(wrapper.cleanCanvas, 0, 0);
+
+            // 步驟三：檢查全域變數 annotations 中，這一頁有沒有需要畫的筆記
+            if (annotations[pageNum]) {
+                // 依每一段文字的座標畫上半透明黃底，不繪製外框。
+                ctx.fillStyle = 'rgba(255, 226, 84, 0.36)';
+
+                // 走訪該頁的所有筆記 (ann)
+                annotations[pageNum].forEach(ann => {
+                    // PDF 文字層常把一行拆成重疊的小矩形；先合併後再畫，避免顏色越疊越深。
+                    ann.rects = normalizeHighlightRects(ann.rects);
+                    ann.rects.forEach(r => {
+                        // fillRect(x, y, 寬, 高)：在畫布上畫出實心的螢光矩形
+                        ctx.fillRect(r.x, r.y, r.w, r.h);
+                    });
+                });
+            }
+        }
+
+        // 將同一行、彼此重疊或僅相差極小空隙的文字矩形合併。
+        // Range.getClientRects() 會因 PDF 文字片段切分而回傳重複區域；若直接逐個繪製，透明黃底就會變深。
+        function normalizeHighlightRects(rects) {
+            const rows = [];
+            rects.filter(rect => rect.w > 0 && rect.h > 0).forEach(rect => {
+                const centerY = rect.y + rect.h / 2;
+                let matchingRow = rows.find(row => Math.abs(row.centerY - centerY) <= Math.max(2, Math.min(row.h, rect.h) * 0.35));
+                if (!matchingRow) {
+                    matchingRow = { centerY, h: rect.h, rects: [] };
+                    rows.push(matchingRow);
+                }
+                matchingRow.rects.push({ ...rect });
+                matchingRow.centerY = matchingRow.rects.reduce((total, item) => total + item.y + item.h / 2, 0) / matchingRow.rects.length;
+                matchingRow.h = Math.max(matchingRow.h, rect.h);
+            });
+
+            return rows.flatMap(row => {
+                const merged = [];
+                // 將一般字距、全形空白或 PDF 文字切片造成的小缺口補成同一條反白；
+                // 上限 32px，避免把公文表格中相隔很遠的不同欄位接在一起。
+                const bridgeableGap = Math.min(32, Math.max(12, row.h * 1.1));
+                row.rects.sort((a, b) => a.x - b.x).forEach(rect => {
+                    const previous = merged[merged.length - 1];
+                    if (previous && rect.x <= previous.x + previous.w + bridgeableGap) {
+                        const right = Math.max(previous.x + previous.w, rect.x + rect.w);
+                        const bottom = Math.max(previous.y + previous.h, rect.y + rect.h);
+                        previous.x = Math.min(previous.x, rect.x);
+                        previous.y = Math.min(previous.y, rect.y);
+                        previous.w = right - previous.x;
+                        previous.h = bottom - previous.y;
+                    } else {
+                        merged.push(rect);
+                    }
+                });
+                return merged;
+            });
+        }
+
+        // 將連結帶進來的引文與 PDF.js 文字層轉成可比對的文字。
+        // PDF 常會把同一個詞拆成多個文字片段，因此比對時先忽略空白與常見標點。
+        function normalizeFocusText(value) {
+            return String(value || '')
+                .normalize('NFKC')
+                .toLowerCase()
+                .replace(/[\s\u3000，。；：、？！「」『』（）()【】［］《》〈〉“”"'.,:;!?/\\\-—_]/g, '');
+        }
+
+        function buildFocusSearchIndex(wrapper) {
+            if (wrapper.focusSearchIndex) return wrapper.focusSearchIndex;
+            const sortedItems = wrapper.textItems.slice().sort((a, b) => {
+                if (Math.abs(a.y - b.y) > 5) return a.y - b.y;
+                return a.x - b.x;
+            });
+            const chars = [];
+            const boxes = [];
+            sortedItems.forEach(item => {
+                const rawText = String(item.str || '');
+                for (let offset = 0; offset < rawText.length; offset += 1) {
+                    const normalized = normalizeFocusText(rawText[offset]);
+                    for (const character of normalized) {
+                        chars.push(character);
+                        boxes.push({ item, offset });
+                    }
+                }
+            });
+            wrapper.focusSearchIndex = { text: chars.join(''), boxes };
+            return wrapper.focusSearchIndex;
+        }
+
+        function focusCandidates(text, exact) {
+            const raw = String(text || '').trim();
+            if (!raw) return [];
+            const candidates = [raw];
+            // 摘要通常不是 PDF 原文；拆成較短的句子，讓系統只在確實找到逐字片段時標示。
+            if (!exact) {
+                candidates.push(...raw.split(/[。；！？!?\n]/).map(part => part.trim()));
+                candidates.push(...raw.split(/[，、,]/).map(part => part.trim()));
+            }
+            return [...new Set(candidates)]
+                .map(value => ({ raw: value, normalized: normalizeFocusText(value) }))
+                .filter(item => item.normalized.length >= (exact ? 6 : 10))
+                .sort((a, b) => b.normalized.length - a.normalized.length);
+        }
+
+        function rectsForFocusMatch(index, start, end) {
+            const groups = [];
+            for (let cursor = start; cursor < end; cursor += 1) {
+                const entry = index.boxes[cursor];
+                if (!entry) continue;
+                let group = groups.find(item => item.item === entry.item);
+                if (!group) {
+                    group = { item: entry.item, min: entry.offset, max: entry.offset };
+                    groups.push(group);
+                } else {
+                    group.min = Math.min(group.min, entry.offset);
+                    group.max = Math.max(group.max, entry.offset);
+                }
+            }
+            return normalizeHighlightRects(groups.map(group => {
+                const length = Math.max(1, String(group.item.str || '').length);
+                const startOffset = Math.max(0, group.min);
+                const endOffset = Math.min(length, group.max + 1);
+                return {
+                    x: group.item.x + (startOffset / length) * group.item.w,
+                    y: group.item.y,
+                    w: Math.max(2, ((endOffset - startOffset) / length) * group.item.w),
+                    h: group.item.h
+                };
+            }));
+        }
+
+        function findFocusMatch(wrapper, candidates) {
+            const index = buildFocusSearchIndex(wrapper);
+            for (const candidate of candidates) {
+                const start = index.text.indexOf(candidate.normalized);
+                if (start < 0) continue;
+                const end = start + candidate.normalized.length;
+                const rects = rectsForFocusMatch(index, start, end);
+                if (rects.length) {
+                    return { text: candidate.raw, rects };
+                }
+            }
+            return null;
+        }
+
+        function showFocusResult(filename, request, match, pageNum) {
+            const issueLabel = request.issue ? `「${request.issue}」` : '爭議主張';
+            if (match) {
+                annotations[pageNum] = annotations[pageNum] || [];
+                annotations[pageNum].push({
+                    id: `focus_${Date.now()}`,
+                    rects: match.rects,
+                    text: match.text,
+                    focus: true
+                });
+                const wrapper = document.querySelector(`.pdf-page-wrapper[data-page-num="${pageNum}"]`);
+                const canvas = wrapper?.querySelector('canvas');
+                if (wrapper && canvas) redrawPage(wrapper, canvas, pageNum);
+                renderNotes();
+                wrapper?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                pageInfo.innerText = `${filename} (共 ${pdfDoc.numPages} 頁) · 已定位 ${issueLabel}`;
+                return;
+            }
+            pageInfo.innerText = `${filename} (共 ${pdfDoc.numPages} 頁) · 找不到 ${issueLabel} 的逐字內容`;
+            notesContainer.insertAdjacentHTML(
+                'afterbegin',
+                '<div class="note-empty focus-not-found"><strong>尚未找到可精準標示的原文</strong>目前帶入的是分析摘要，不是 PDF 逐字引文；請從 PDF 直接反白，或讓 API 回傳 exact_quote。</div>'
+            );
+        }
+
+        function applyPendingFocusRequest(filename) {
+            const request = pendingFocusRequest;
+            pendingFocusRequest = null;
+            if (!request?.text || !pdfDoc) return;
+            const candidates = focusCandidates(request.text, request.exact);
+            if (!candidates.length) return;
+            const wrappers = [...document.querySelectorAll('.pdf-page-wrapper')];
+            const preferredPage = Number.parseInt(request.page, 10);
+            const orderedWrappers = preferredPage > 0
+                ? [...wrappers.filter(wrapper => Number(wrapper.dataset.pageNum) === preferredPage), ...wrappers.filter(wrapper => Number(wrapper.dataset.pageNum) !== preferredPage)]
+                : wrappers;
+            for (const wrapper of orderedWrappers) {
+                const match = findFocusMatch(wrapper, candidates);
+                if (match) {
+                    showFocusResult(filename, request, match, Number(wrapper.dataset.pageNum));
+                    return;
+                }
+            }
+            showFocusResult(filename, request, null, preferredPage || 1);
+        }
+
+        // 工具列的按鈕切換邏輯 (由 HTML onClick 呼叫)
+        window.setTool = function(tool) {
+            currentTool = tool; // 更新全域工具變數
+
+            // classList.toggle(類別名, 布林值)：如果布林值為 true 就加上 class，false 就移除
+            // 這用來確保畫面上永遠只有「一個」按鈕是藍色 (active) 的
+            document.getElementById('btnMouse').classList.toggle('active', tool === 'mouse');
+            document.getElementById('btnHighlight').classList.toggle('active', tool === 'highlight');
+            document.getElementById('btnEraser').classList.toggle('active', tool === 'eraser');
+
+            // 先清除 body 身上舊的游標樣式 class
+            document.body.classList.remove('mode-highlight', 'mode-eraser');
+            // 再根據選到的工具加上對應的 class，藉此讓 CSS 將游標變成十字或手指
+            if (tool === 'highlight') document.body.classList.add('mode-highlight');
+            if (tool === 'eraser') document.body.classList.add('mode-eraser');
+
+            // 如果選的是橡皮擦，就在 body 加上 tool-eraser，這會讓 CSS 顯示出橡皮擦專用的子選單
+            if (tool === 'eraser') {
+                document.body.classList.add('tool-eraser');
+            } else {
+                document.body.classList.remove('tool-eraser');
+            }
+        };
+
+        // 橡皮擦次選單的模式切換 (整段/單行)
+        window.setEraserMode = function(mode) {
+            eraserMode = mode;
+            document.getElementById('btnEraserBlock').classList.toggle('active', mode === 'block');
+            document.getElementById('btnEraserLine').classList.toggle('active', mode === 'line');
+        };
+
+        // 終極大魔王區塊：處理在畫布上拖曳、畫框框、判斷文字座標的複雜數學邏輯
+        function bindCanvasEvents(wrapper, canvas, selectionBox, pageNum) {
+            const tooltip = document.getElementById('highlightTooltip');
+            let isDrawing = false; // 布林值：代表滑鼠是不是處於按住不放的狀態
+            let startX, startY; // 紀錄一開始滑鼠點下去時的初始 X, Y 座標
+
+            // --- 動作 1：滑鼠按鍵點下 (mousedown) ---
+            canvas.addEventListener('mousedown', (e) => {
+                if (currentTool !== 'highlight') return; // 如果不是螢光筆模式，就不鳥他
+                isDrawing = true; // 狀態改為「正在畫」
+
+                // getBoundingClientRect()：取得 Canvas 元素在瀏覽器視窗中的確切位置與大小
+                const rect = canvas.getBoundingClientRect();
+
+                // e.clientX 是滑鼠相對於整個螢幕視窗的座標，減去 rect.left (Canvas 的邊界)，
+                // 就能精確算出滑鼠「相對於這張畫布內部」的 X 座標。
+                startX = e.clientX - rect.left;
+                startY = e.clientY - rect.top;
+
+                // 設定虛線框 (selectionBox) 的起始位置，並把寬高歸零，然後將 display 改為 block 讓它顯示出來
+                selectionBox.style.left = startX + 'px';
+                selectionBox.style.top = startY + 'px';
+                selectionBox.style.width = '0px';
+                selectionBox.style.height = '0px';
+                selectionBox.style.display = 'block';
+            });
+
+            // --- 動作 2：滑鼠移動 (mousemove) ---
+            canvas.addEventListener('mousemove', (e) => {
+                if (!isDrawing) return; // 如果滑鼠沒有按著，就不做事
+
+                const rect = canvas.getBoundingClientRect();
+                const currentX = e.clientX - rect.left; // 滑鼠目前移動到的最新 X 座標
+                const currentY = e.clientY - rect.top;
+
+                // 數學計算：決定虛線框的位置與寬高。
+                // 為什麼要用 Math.min 和 Math.abs？因為使用者可能是從右下角往左上角反向拖曳畫框框！
+                // Math.min 確保虛線框的左上角基準點永遠是兩點之間較小的那個座標。
+                // Math.abs (絕對值) 確保寬高永遠是正數。
+                selectionBox.style.left = Math.min(startX, currentX) + 'px';
+                selectionBox.style.top = Math.min(startY, currentY) + 'px';
+                selectionBox.style.width = Math.abs(currentX - startX) + 'px';
+                selectionBox.style.height = Math.abs(currentY - startY) + 'px';
+            });
+
+            // --- 動作 3：滑鼠按鍵放開 (mouseup) - 決定命運的時刻 ---
+            canvas.addEventListener('mouseup', (e) => {
+                    // 💡 滑鼠模式下：點擊螢光筆標記，直接在該標記「正上方」彈出對話框氣泡
+                    if (currentTool === 'mouse' && !isDrawing) {
+                    const rect = canvas.getBoundingClientRect();
+                    const clickX = e.clientX - rect.left;
+                    const clickY = e.clientY - rect.top;
+
+                        if (annotations[pageNum]) {
+                            annotations[pageNum].forEach(ann => {
+                                const hit = ann.rects.some(r =>
+                                    clickX >= r.x - 3 && clickX <= r.x + r.w + 3 &&
+                                    clickY >= r.y - 3 && clickY <= r.y + r.h + 3
+                                );
+                                if (hit) {
+                                    const existingBubble = activeBubbles.find(b => b.noteId === ann.id);
+                                    if (!existingBubble) {
+                                        createSpeechBubble(ann, pageNum, wrapper, ann.rects[0]);
+                                    }
+                                }
+                            });
+                        }
+                        return;
+                    }
+
+                // 🌈 狀況 A：使用者放開螢光筆
+                if (currentTool === 'highlight' && isDrawing) {
+                    isDrawing = false; // 停止畫框
+                    selectionBox.style.display = 'none'; // 將藍色虛線框隱藏
+
+                    // 計算滑鼠最後停在哪裡 (終點座標)
+                    const rect = canvas.getBoundingClientRect();
+                    const endX = e.clientX - rect.left;
+                    const endY = e.clientY - rect.top;
+
+                    // 防呆：如果起點跟終點距離小於 5 像素，視為「不小心點到」，不進行擷取
+                    if (Math.abs(endX - startX) > 5 || Math.abs(endY - startY) > 5) {
+
+                        // 整理座標：設定 p1 為你畫的框框的靠上方點，p2 為靠下方點
+                        let p1 = { x: startX, y: startY };
+                        let p2 = { x: endX, y: endY };
+                        if (p1.y > p2.y) {
+                            p1 = { x: endX, y: endY };
+                            p2 = { x: startX, y: startY };
+                        }
+
+                        // 初始化時，先把這頁所有的文字節點做「排序 (sort)」。
+                        // 為什麼要排？因為 PDF 內部的文字順序有時候是亂的，如果不排，抓出來的筆記句子可能會前後顛倒。
+                        if (!wrapper.sortedTextItems) {
+                            // 優先依照 Y 軸 (行距) 排，如果兩字 Y 軸差不多，再依據 X 軸 (由左至右) 排
+                            wrapper.sortedTextItems = wrapper.textItems.slice().sort((a, b) => {
+                                if (Math.abs(a.y - b.y) > 5) return a.y - b.y;
+                                return a.x - b.x;
+                            });
+                        }
+
+                        let extractedText = ""; // 準備用來拼湊擷取到的純文字
+                        let rectsToDraw = []; // 準備存取要在畫布上塗橘色的矩形座標資料
+                        let lastY = -1; // 紀錄上一個字的 Y 座標，用來判斷是否需要「換行」
+                        const tolerance = 5; // 判斷是否換行的誤差值
+
+                        // forEach: 走訪排序好的每一個文字節點，檢查它有沒有掉進你畫的框框裡
+                        wrapper.sortedTextItems.forEach(item => {
+                            // 宣告重疊範圍變數 (預設 -1 代表沒重疊)
+                            let overlapStartX = -1;
+                            let overlapEndX = -1;
+
+                            const itemCenterY = item.y + item.h / 2; // 文字中心點的 Y 座標
+                            const boxTop = Math.min(p1.y, p2.y); // 你拉的框框的頂部
+                            const boxBottom = Math.max(p1.y, p2.y); // 框框的底部
+
+                            // 碰撞測試 1：這行文字「完全」落在框框的中間行？
+                            if (item.y >= boxTop - 2 && (item.y + item.h) <= boxBottom + 2) {
+                                overlapStartX = item.x; // 整個字元都被覆蓋
+                                overlapEndX = item.x + item.w;
+                            } else {
+                                // 碰撞測試 2：這行文字是你框選範圍的「第一行」或「最後一行」嗎？
+                                // 如果是，允許「部分框選」(也就是從句子中間開始反白)
+                                const isOnP1Line = Math.abs(itemCenterY - p1.y) < item.h / 2 + 2;
+                                const isOnP2Line = Math.abs(itemCenterY - p2.y) < item.h / 2 + 2;
+
+                                if (isOnP1Line && isOnP2Line) { // 只有選單行的一部分
+                                    overlapStartX = Math.min(p1.x, p2.x);
+                                    overlapEndX = Math.max(p1.x, p2.x);
+                                } else if (isOnP1Line) { // 選第一行，所以從起點框到句尾
+                                    overlapStartX = p1.x;
+                                    overlapEndX = item.x + item.w;
+                                } else if (isOnP2Line) { // 選最後一行，從句首框到終點
+                                    overlapStartX = item.x;
+                                    overlapEndX = p2.x;
+                                }
+                            }
+
+                            // 結算：如果有重疊，開始擷取文字
+                            if (overlapStartX !== -1 && overlapEndX !== -1) {
+                                overlapStartX = Math.max(overlapStartX, item.x);
+                                overlapEndX = Math.min(overlapEndX, item.x + item.w);
+
+                                if (overlapStartX < overlapEndX) {
+                                    // 將座標長度換算成「有幾個字元」被選到
+                                    const charWidth = item.w / Math.max(1, item.str.length);
+                                    let startIndex = Math.floor((overlapStartX - item.x) / charWidth);
+                                    let endIndex = Math.ceil((overlapEndX - item.x) / charWidth);
+
+                                    startIndex = Math.max(0, startIndex);
+                                    endIndex = Math.min(item.str.length, endIndex);
+
+                                    if (startIndex < endIndex) {
+                                        // 判斷是否需要加入換行符號 (\n)
+                                        if (lastY !== -1 && Math.abs(item.y - lastY) > tolerance * 2) {
+                                            extractedText += "\n";
+                                        }
+                                        // substring(起, 終)：把字串切出來，接在 extractedText 後面
+                                        extractedText += item.str.substring(startIndex, endIndex);
+                                        lastY = item.y; // 記住這行 Y 座標
+
+                                        // 將這個字串的矩形座標存進陣列，準備畫畫用
+                                        rectsToDraw.push({
+                                            x: item.x + startIndex * charWidth,
+                                            y: item.y,
+                                            w: (endIndex - startIndex) * charWidth,
+                                            h: item.h
+                                        });
+                                    }
+                                }
+                            }
+                        }); // forEach 迴圈結束
+
+                        // 判斷結果：如果真的有抓到文字而且有矩形座標
+                        if (rectsToDraw.length > 0 && extractedText.trim().length > 0) {
+                            const noteId = 'note_' + Date.now(); // 給這筆筆記一個身分證字號
+                            if (!annotations[pageNum]) annotations[pageNum] = []; // 如果這頁還沒有半個筆記，就初始化一個空陣列
+
+                            // 將這筆完整的筆記物件 (包含身分證、要畫橘色的座標陣列、抓出來的文字)，塞進全域資料庫 annotations 中
+                            annotations[pageNum].push({
+                                id: noteId,
+                                rects: rectsToDraw,
+                                text: extractedText.trim()
+                            });
+
+                            redrawPage(wrapper, canvas, pageNum); // 呼叫重繪函式：把剛剛計算出的橘色矩形畫在 Canvas 上！
+                            renderNotes(); // 更新右邊的筆記卡片面板
+                        }
+                    }
+                }
+
+                // 🧽 狀況 B：使用者點擊橡皮擦
+                else if (currentTool === 'eraser') {
+                    // 計算滑鼠點擊的當下 X, Y 座標 (clickX, clickY)
+                    const rect = canvas.getBoundingClientRect();
+                    const clickX = e.clientX - rect.left;
+                    const clickY = e.clientY - rect.top;
+
+                    if (annotations[pageNum]) {
+                        if (eraserMode === 'block') {
+                            // 模式一：整段刪除 (Block)
+                            const originalLength = annotations[pageNum].length;
+
+                            // filter(): 陣列過濾功能。它會留下 return true 的物件。
+                            annotations[pageNum] = annotations[pageNum].filter(ann => {
+                                // some(): 陣列檢查功能。只要筆記的任何一個螢光矩形 (r)，涵蓋到了滑鼠點擊的座標，hit 就會是 true。
+                                const hit = ann.rects.some(r => clickX >= r.x && clickX <= r.x + r.w && clickY >= r.y && clickY <= r.y + r.h);
+                                return !hit; // 💡 驚嘆號代表反轉。也就是「沒有被點到 (!hit) 的筆記，才保留下來」。
+                            });
+
+                            // 如果陣列長度變短了，代表有東西被刪除了
+                            if (annotations[pageNum].length < originalLength) {
+                                redrawPage(wrapper, canvas, pageNum); // 重新畫圖 (錯的螢光筆就會消失)
+                                renderNotes(); // 重新列出筆記 (錯的筆記卡片會消失)
+                            }
+                        } else {
+                            // 模式二：單行/局部刪除 (Line)
+                            let updatedAnnotations = []; // 準備一個新陣列裝修改過後的筆記
+                            let modified = false;
+
+                            // 走訪這頁的所有筆記
+                            annotations[pageNum].forEach(ann => {
+                                let remainingRects = [];
+
+                                // 走訪這則筆記的所有螢光矩形行
+                                ann.rects.forEach((r, idx) => {
+                                    // 如果滑鼠點到了這「一行」
+                                    if (clickX >= r.x && clickX <= r.x + r.w && clickY >= r.y && clickY <= r.y + r.h) {
+                                        modified = true;
+                                        // 嘗試從右側的筆記文字中，將這「一行」對應的文字給切除掉
+                                        const lines = ann.text.split('\n'); // 將文字用換行符號切成陣列
+                                        if (lines[idx]) {
+                                            lines.splice(idx, 1); // 刪掉陣列中的該行文字
+                                            ann.text = lines.join('\n'); // 重新將剩下的文字組合起來
+                                        }
+                                    } else {
+                                        // 沒被點到的矩形，保留下來
+                                        remainingRects.push(r);
+                                    }
+                                });
+
+                                // 如果被切掉幾行之後，這則筆記還有剩下的資料，就更新進去
+                                if (remainingRects.length > 0 && ann.text.trim().length > 0) {
+                                    ann.rects = remainingRects;
+                                    updatedAnnotations.push(ann);
+                                } else {
+                                    modified = true; // 如果整行都被切光了，這則筆記就會自然消滅
+                                }
+                            });
+
+                            if (modified) {
+                                annotations[pageNum] = updatedAnnotations; // 覆寫舊資料庫
+                                redrawPage(wrapper, canvas, pageNum); // 更新畫面
+                                renderNotes(); // 更新卡片
+                            }
+                        }
+                    }
+                }
+            });
+
+            // --- 動作 4：滑鼠離開畫布 (mouseleave) ---
+            // 防呆機制：如果使用者畫框畫到一半，滑鼠不小心移到瀏覽器外面，要立刻終止畫框行為並把虛線藏起來。
+            canvas.addEventListener('mouseleave', () => {
+                if (isDrawing) { isDrawing = false; selectionBox.style.display = 'none'; }
+            });
+        }
+
+        // 原生文字層事件：拖曳期間由瀏覽器顯示選取預覽，放開後才把範圍存為反白筆記。
+        function bindTextLayerEvents(wrapper, textLayer, canvas, pageNum) {
+            textLayer.addEventListener('mouseup', () => {
+                if (currentTool !== 'highlight') return;
+
+                requestAnimationFrame(() => {
+                    const selection = window.getSelection();
+                    if (!selection || selection.rangeCount === 0 || selection.isCollapsed) return;
+
+                    const range = selection.getRangeAt(0);
+                    // 只接受完全位於同一頁文字層的反白，避免跨頁時混入其他頁內容。
+                    if (!textLayer.contains(range.startContainer) || !textLayer.contains(range.endContainer)) return;
+
+                    const text = selection.toString().trim();
+                    const wrapperBounds = wrapper.getBoundingClientRect();
+                    const rawRects = Array.from(range.getClientRects())
+                        .filter(rect => rect.width > 1 && rect.height > 1)
+                        .map(rect => ({
+                            x: rect.left - wrapperBounds.left,
+                            y: rect.top - wrapperBounds.top,
+                            w: rect.width,
+                            h: rect.height
+                        }));
+                    const rects = normalizeHighlightRects(rawRects);
+
+                    if (!text || !rects.length) return;
+                    if (!annotations[pageNum]) annotations[pageNum] = [];
+                    annotations[pageNum].push({ id: 'note_' + Date.now(), rects, text });
+                    selection.removeAllRanges();
+                    redrawPage(wrapper, canvas, pageNum);
+                    renderNotes();
+                });
+            });
+
+            textLayer.addEventListener('click', (event) => {
+                const bounds = canvas.getBoundingClientRect();
+                const x = event.clientX - bounds.left;
+                const y = event.clientY - bounds.top;
+
+                if (currentTool === 'mouse') {
+                    (annotations[pageNum] || []).forEach(annotation => {
+                        const hit = annotation.rects.some(rect => x >= rect.x - 3 && x <= rect.x + rect.w + 3 && y >= rect.y - 3 && y <= rect.y + rect.h + 3);
+                        if (hit && !activeBubbles.some(bubble => bubble.noteId === annotation.id)) {
+                            createSpeechBubble(annotation, pageNum, wrapper, annotation.rects[0]);
+                        }
+                    });
+                    return;
+                }
+
+                if (currentTool !== 'eraser' || !annotations[pageNum]) return;
+                if (eraserMode === 'block') {
+                    const originalLength = annotations[pageNum].length;
+                    annotations[pageNum] = annotations[pageNum].filter(annotation => !annotation.rects.some(rect => x >= rect.x && x <= rect.x + rect.w && y >= rect.y && y <= rect.y + rect.h));
+                    if (annotations[pageNum].length !== originalLength) {
+                        redrawPage(wrapper, canvas, pageNum);
+                        renderNotes();
+                    }
+                }
+            });
+        }
+
+        // 舊版座標選取邏輯保留作為參考；目前閱讀器改由上方的原生文字層處理。
+        // 把 PDF.js 的文字節點依視覺行分組。預覽與正式儲存共用此函式，避免兩者結果不同。
+        function getTextSelection(wrapper, startX, startY, endX, endY) {
+            if (!wrapper.textLines) {
+                const items = wrapper.textItems
+                    .filter(item => item.str && item.w > 0 && item.h > 0)
+                    .slice()
+                    .sort((a, b) => Math.abs(a.y - b.y) > 4 ? a.y - b.y : a.x - b.x);
+
+                wrapper.textLines = [];
+                items.forEach(item => {
+                    const centerY = item.y + item.h / 2;
+                    const lastLine = wrapper.textLines[wrapper.textLines.length - 1];
+                    const sameLine = lastLine && Math.abs(centerY - lastLine.centerY) <= Math.max(4, Math.min(item.h, lastLine.h) * 0.45);
+                    if (!sameLine) {
+                        wrapper.textLines.push({ items: [item], centerY, top: item.y, bottom: item.y + item.h, h: item.h });
+                        return;
+                    }
+                    lastLine.items.push(item);
+                    lastLine.top = Math.min(lastLine.top, item.y);
+                    lastLine.bottom = Math.max(lastLine.bottom, item.y + item.h);
+                    lastLine.h = lastLine.bottom - lastLine.top;
+                    lastLine.centerY = (lastLine.top + lastLine.bottom) / 2;
+                });
+            }
+
+            const top = Math.min(startY, endY);
+            const bottom = Math.max(startY, endY);
+            const selectedLines = wrapper.textLines.filter(line => {
+                const tolerance = Math.max(3, line.h * 0.35);
+                return line.centerY >= top - tolerance && line.centerY <= bottom + tolerance;
+            });
+            if (!selectedLines.length) return { text: '', rects: [] };
+
+            const isForward = endY > startY + 3 || (Math.abs(endY - startY) <= 3 && endX >= startX);
+            const firstBoundary = isForward ? startX : endX;
+            const lastBoundary = isForward ? endX : startX;
+            const rects = [];
+            const selectedTextLines = [];
+
+            selectedLines.forEach((line, lineIndex) => {
+                let rangeStart = -Infinity;
+                let rangeEnd = Infinity;
+                if (selectedLines.length === 1) {
+                    rangeStart = Math.min(startX, endX);
+                    rangeEnd = Math.max(startX, endX);
+                } else if (lineIndex === 0) {
+                    rangeStart = firstBoundary;
+                } else if (lineIndex === selectedLines.length - 1) {
+                    rangeEnd = lastBoundary;
+                }
+
+                let lineText = '';
+                let lastRight = null;
+                line.items.forEach(item => {
+                    const charWidth = item.w / Math.max(1, item.str.length);
+                    const overlapStart = Math.max(item.x, rangeStart);
+                    const overlapEnd = Math.min(item.x + item.w, rangeEnd);
+                    if (overlapStart >= overlapEnd) return;
+
+                    const startIndex = Math.max(0, Math.floor((overlapStart - item.x) / charWidth + 0.001));
+                    const endIndex = Math.min(item.str.length, Math.ceil((overlapEnd - item.x) / charWidth - 0.001));
+                    if (startIndex >= endIndex) return;
+
+                    const text = item.str.substring(startIndex, endIndex);
+                    const x = item.x + startIndex * charWidth;
+                    const w = (endIndex - startIndex) * charWidth;
+                    if (lineText && lastRight !== null && x - lastRight > Math.max(2, charWidth * 0.65)) lineText += ' ';
+                    lineText += text;
+                    lastRight = x + w;
+                    rects.push({ x, y: item.y, w, h: item.h });
+                });
+                if (lineText.trim()) selectedTextLines.push(lineText.trim());
+            });
+
+            return { text: selectedTextLines.join('\n'), rects };
+        }
+
+        function renderSelectionPreview(previewLayer, rects) {
+            previewLayer.replaceChildren();
+            const fragment = document.createDocumentFragment();
+            rects.forEach(rect => {
+                const mark = document.createElement('div');
+                mark.className = 'selection-preview';
+                mark.style.left = `${rect.x}px`;
+                mark.style.top = `${rect.y}px`;
+                mark.style.width = `${rect.w}px`;
+                mark.style.height = `${rect.h}px`;
+                fragment.appendChild(mark);
+            });
+            previewLayer.appendChild(fragment);
+        }
+
+        // 第二版事件處理：預覽、反白儲存與既有的滑鼠／橡皮擦模式。
+        function bindCanvasEventsV2(wrapper, canvas, selectionPreviewLayer, pageNum) {
+            let isDrawing = false;
+            let startX, startY;
+
+            canvas.addEventListener('mousedown', (event) => {
+                if (currentTool !== 'highlight') return;
+                isDrawing = true;
+                const bounds = canvas.getBoundingClientRect();
+                startX = event.clientX - bounds.left;
+                startY = event.clientY - bounds.top;
+                renderSelectionPreview(selectionPreviewLayer, []);
+            });
+
+            canvas.addEventListener('mousemove', (event) => {
+                if (!isDrawing) return;
+                const bounds = canvas.getBoundingClientRect();
+                const selection = getTextSelection(wrapper, startX, startY, event.clientX - bounds.left, event.clientY - bounds.top);
+                renderSelectionPreview(selectionPreviewLayer, selection.rects);
+            });
+
+            canvas.addEventListener('mouseup', (event) => {
+                const bounds = canvas.getBoundingClientRect();
+                const point = { x: event.clientX - bounds.left, y: event.clientY - bounds.top };
+
+                if (currentTool === 'mouse' && !isDrawing) {
+                    (annotations[pageNum] || []).forEach(annotation => {
+                        const hit = annotation.rects.some(rect => point.x >= rect.x - 3 && point.x <= rect.x + rect.w + 3 && point.y >= rect.y - 3 && point.y <= rect.y + rect.h + 3);
+                        if (hit && !activeBubbles.some(bubble => bubble.noteId === annotation.id)) {
+                            createSpeechBubble(annotation, pageNum, wrapper, annotation.rects[0]);
+                        }
+                    });
+                    return;
+                }
+
+                if (currentTool === 'highlight' && isDrawing) {
+                    isDrawing = false;
+                    const selection = getTextSelection(wrapper, startX, startY, point.x, point.y);
+                    renderSelectionPreview(selectionPreviewLayer, []);
+                    if (!selection.rects.length || !selection.text.trim()) return;
+
+                    if (!annotations[pageNum]) annotations[pageNum] = [];
+                    annotations[pageNum].push({ id: 'note_' + Date.now(), rects: selection.rects, text: selection.text.trim() });
+                    redrawPage(wrapper, canvas, pageNum);
+                    renderNotes();
+                    return;
+                }
+
+                if (currentTool === 'eraser' && annotations[pageNum]) {
+                    if (eraserMode === 'block') {
+                        const previousLength = annotations[pageNum].length;
+                        annotations[pageNum] = annotations[pageNum].filter(annotation => !annotation.rects.some(rect => point.x >= rect.x && point.x <= rect.x + rect.w && point.y >= rect.y && point.y <= rect.y + rect.h));
+                        if (annotations[pageNum].length !== previousLength) {
+                            redrawPage(wrapper, canvas, pageNum);
+                            renderNotes();
+                        }
+                        return;
+                    }
+
+                    const updated = [];
+                    let changed = false;
+                    annotations[pageNum].forEach(annotation => {
+                        const keptRects = annotation.rects.filter(rect => {
+                            const hit = point.x >= rect.x && point.x <= rect.x + rect.w && point.y >= rect.y && point.y <= rect.y + rect.h;
+                            changed ||= hit;
+                            return !hit;
+                        });
+                        if (keptRects.length) updated.push({ ...annotation, rects: keptRects });
+                    });
+                    if (changed) {
+                        annotations[pageNum] = updated;
+                        redrawPage(wrapper, canvas, pageNum);
+                        renderNotes();
+                    }
+                }
+            });
+
+            canvas.addEventListener('mouseleave', () => {
+                if (!isDrawing) return;
+                isDrawing = false;
+                renderSelectionPreview(selectionPreviewLayer, []);
+            });
+        }
+
+        // 負責將 annotations 資料庫裡的東西，變成右邊面板的實體 HTML 卡片
+        function renderNotes() {
+            notesContainer.innerHTML = ''; // 先清空面板
+            let hasNotes = false; // 追蹤到底有沒有筆記
+
+            // Object.keys(annotations)：把資料庫的物件屬性 (也就是頁碼) 抽出來變成陣列 ['1', '3', '2']
+            // sort((a, b) => a - b)：確保陣列按照頁碼數字從小到大排好 ['1', '2', '3']
+            Object.keys(annotations).sort((a, b) => a - b).forEach(pageNum => {
+                // 走訪該頁面的每一筆筆記 (ann)
+                annotations[pageNum].forEach(ann => {
+                    if (ann.text) {
+                        hasNotes = true;
+
+                        // 💡 正規表達式 (Regex) 文字美化：
+                        // PDF 抓出來的中文文字中間，常會夾雜奇怪的空格 ("電 腦" -> "電腦")。
+                        // /[ \u4e00-\u9fa5]/ 代表中文字元，這個 replace 把相鄰中文字中間的空白給去除掉。
+                        let cleanedText = ann.text.replace(/([\u4e00-\u9fa5])\s+([\u4e00-\u9fa5])/g, '$1$2');
+
+                        // 建立卡片 <div> 並設定樣式 class
+                        const card = document.createElement('div');
+                        card.className = `note-card${ann.focus ? ' is-focus' : ''}`;
+                        const pageLabel = document.createElement('strong');
+                        pageLabel.textContent = `第 ${pageNum} 頁`;
+                        card.appendChild(pageLabel);
+                        if (ann.focus) {
+                            const focusBadge = document.createElement('em');
+                            focusBadge.className = 'note-focus-badge';
+                            focusBadge.textContent = '自動定位';
+                            card.appendChild(focusBadge);
+                        }
+                        card.appendChild(document.createElement('br'));
+                        cleanedText.split('\n').forEach((line, lineIndex) => {
+                            if (lineIndex) card.appendChild(document.createElement('br'));
+                            card.appendChild(document.createTextNode(line));
+                        });
+                        // 將卡片附加到右側面板中
+                        notesContainer.appendChild(card);
+                    }
+                });
+            });
+
+            // 如果迴圈跑完發現一個筆記都沒有，顯示空狀態提示文字
+            if (!hasNotes) {
+                notesContainer.innerHTML = '<div class="note-empty">使用反白擷取重點文字<br>擷取內容會自動出現在這裡</div>';
+            }
+        }
+
+        // 數學輔助函式：用來將電腦的純數字 Bytes 檔案大小，轉換成人類看得懂的 KB 或 MB
+        function formatBytes(bytes, decimals = 2) {
+            if (bytes === 0) return '0 Bytes';
+            const k = 1024, dm = decimals < 0 ? 0 : decimals, sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
+            // 運用對數 (log) 計算檔案大小落在哪個層級 (KB, MB, GB...)
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            // parseFloat 與 toFixed 用來控制小數點位數，最後組合成文字字串回傳
+            return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
+        }
+        // --- 4. 支援「拖曳檔案上傳」的全新事件監聽 ---
+        const dropZone = document.getElementById('dropZone');
+
+        // 1. 當檔案被拖曳進入上傳區範圍時
+        ['dragenter', 'dragover'].forEach(eventName => {
+            dropZone.addEventListener(eventName, (e) => {
+            e.preventDefault(); // 阻止瀏覽器預設行為 (避免直接開啟檔案)
+            dropZone.classList.add('is-dragging'); // 拖曳時改變背景色給予視覺回饋
+            }, false);
+        });
+
+        // 2. 當檔案被拖曳離開上傳區範圍時
+        ['dragleave', 'drop'].forEach(eventName => {
+            dropZone.addEventListener(eventName, (e) => {
+            e.preventDefault();
+            dropZone.classList.remove('is-dragging'); // 恢復原本背景色
+            }, false);
+        });
+
+        // 3. 當檔案在區塊內被「放開 (drop)」時
+        dropZone.addEventListener('drop', (e) => {
+            e.preventDefault();
+
+            // 取得被拖曳進來的檔案群組
+            const files = e.dataTransfer.files;
+
+            if (files.length > 0) {
+                beginSelectedFiles(files);
+            }
+        }, false);
+
+
+            // 💡 建立對話框氣泡，直接定位在該頁面的 PDF 標記正上方
+            function createSpeechBubble(ann, pageNum, wrapper, sampleRect) {
+            const bubbleId = 'bubble_' + ann.id;
+
+            const bubble = document.createElement('div');
+            bubble.className = 'speech-bubble';
+            bubble.id = bubbleId;
+
+            // 將對話框直接塞進該頁面的 wrapper 內，這樣它就會跟著該頁的 PDF 內容一起捲動、絕不跑版！
+            wrapper.appendChild(bubble);
+
+            // 計算定位點：對齊該標記區塊的正中央上方
+            const bubbleLeft = sampleRect.x + (sampleRect.w / 2);
+            const bubbleTop = sampleRect.y;
+
+            bubble.style.left = `${bubbleLeft}px`;
+            bubble.style.top = `${bubbleTop}px`;
+
+            let cleanedText = ann.text.replace(/([\u4e00-\u9fa5])\s+([\u4e00-\u9fa5])/g, '$1$2');
+
+            bubble.innerHTML = `
+                <div class="speech-bubble-header">
+                    <span>第 ${pageNum} 頁標註</span>
+                    <button class="speech-bubble-close" onclick="window.closeBubble('${ann.id}')">×</button>
+                </div>
+                <div>${cleanedText}</div>
+            `;
+
+            activeBubbles.push({
+                noteId: ann.id,
+                element: bubble
+            });
+        }
+
+        window.closeBubble = function(noteId) {
+            removeSpeechBubble(noteId);
+        };
+
+        function removeSpeechBubble(noteId) {
+            activeBubbles = activeBubbles.filter(b => b.noteId !== noteId);
+            const bubbleEl = document.getElementById('bubble_' + noteId);
+            if (bubbleEl) bubbleEl.remove();
+        }
+
+        // 側邊筆記面板收合/展開邏輯：在上傳檔案前也可正常使用。
+        window.toggleNotesPanel = function() {
+            const panel = document.getElementById('notesPanel');
+            const icon = document.getElementById('panelToggleIcon');
+            const toggle = document.getElementById('panelToggle');
+            const isCollapsed = panel.classList.contains('collapsed');
+
+            panel.classList.toggle('collapsed', !isCollapsed);
+            icon.innerText = isCollapsed ? '▶' : '◀';
+            toggle.setAttribute('aria-expanded', String(isCollapsed));
+            toggle.setAttribute('aria-label', isCollapsed ? '展開筆記側欄' : '收合筆記側欄');
+        };
+
+        // 左側資料庫／分析佇列收合與展開；閱讀區會同步向左補滿，不留下空白。
+        window.toggleLibraryPanel = function() {
+            const toggle = document.getElementById('libraryPanelToggle');
+            const icon = document.getElementById('libraryPanelToggleIcon');
+            const isCollapsed = document.body.classList.toggle('library-collapsed');
+
+            if (icon) icon.innerText = isCollapsed ? '▶' : '◀';
+            if (toggle) {
+                const panelName = isCaseNoteMode ? '分析佇列' : '資料庫工作區';
+                toggle.setAttribute('aria-expanded', String(!isCollapsed));
+                toggle.setAttribute('aria-label', isCollapsed ? `展開${panelName}` : `收合${panelName}`);
+            }
+        };
+
+        function showUploadProgress(percent, label, state = 'uploading') {
+            const safePercent = Math.max(0, Math.min(100, Math.round(percent)));
+            if (uploadProgressTimer) {
+                clearTimeout(uploadProgressTimer);
+                uploadProgressTimer = null;
+            }
+            uploadProgress.hidden = false;
+            dropZone.classList.add('has-upload-progress');
+            dropZone.classList.remove('is-progress-fading');
+            uploadProgress.classList.toggle('is-complete', state === 'complete');
+            uploadProgress.classList.toggle('is-error', state === 'error');
+            dropZone.style.setProperty('--upload-progress', `${safePercent}%`);
+            uploadProgressLabel.textContent = label;
+            uploadProgressPercent.textContent = `${safePercent}%`;
+            uploadProgressFill.style.width = `${safePercent}%`;
+            uploadProgressTrack.setAttribute('aria-valuenow', String(safePercent));
+        }
+
+        function hideUploadProgress() {
+            uploadProgressTimer = null;
+            uploadProgress.hidden = true;
+            uploadProgress.classList.remove('is-complete', 'is-error');
+            dropZone.classList.remove('has-upload-progress', 'is-progress-fading');
+            dropZone.style.removeProperty('--upload-progress');
+            uploadProgressFill.style.width = '0%';
+            uploadProgressTrack.setAttribute('aria-valuenow', '0');
+        }
+
+        function fadeOutUploadProgress() {
+            if (uploadProgressTimer) {
+                clearTimeout(uploadProgressTimer);
+            }
+            dropZone.classList.add('is-progress-fading');
+            uploadProgressTimer = setTimeout(hideUploadProgress, 1000);
+        }
+
+        function uploadAndConvert(files, pendingFiles = []) {
+            const formData = new FormData();
+            formData.append('category', activeLibraryCategory);
+            for (const file of files) {
+                formData.append('files', file);
+            }
+
+            dropZone.classList.add('is-uploading');
+            fileInput.disabled = true;
+            showUploadProgress(0, `準備上傳 ${files.length} 個 PDF…`);
+
+            const xhr = new XMLHttpRequest();
+            let uploadRequestFinished = false;
+            let uploadProgressCompleted = false;
+            xhr.open('POST', '/convert');
+
+            // XMLHttpRequest.upload 可以取得實際的檔案傳輸進度。
+            xhr.upload.addEventListener('progress', (event) => {
+                // 回應已經回來後，不讓延遲到達的 progress 事件重新寫回完成文字。
+                if (uploadRequestFinished || uploadProgressCompleted) return;
+
+                if (!event.lengthComputable) {
+                    showUploadProgress(0, '正在上傳 PDF…');
+                    return;
+                }
+
+                const percent = (event.loaded / event.total) * 100;
+                if (percent >= 100) {
+                    // 檔案傳輸到 100% 後，讓整個上傳框保持填滿一小段時間。
+                    uploadProgressCompleted = true;
+                    showUploadProgress(
+                        100,
+                        activeLibraryCategory === defaultLibraryCategory
+                            ? '後端處理：擷取文字並建立階層式 JSON'
+                            : '後端處理：擷取 PDF 文字'
+                    );
+                    return;
+                }
+
+                showUploadProgress(percent, `正在上傳 ${files.length} 個 PDF…`);
+            });
+
+            xhr.addEventListener('load', () => {
+                uploadRequestFinished = true;
+                let result = {};
+                try {
+                    result = JSON.parse(xhr.responseText || '{}');
+                } catch (error) {
+                    result = { error: '伺服器回傳的資料格式錯誤' };
+                }
+
+                if (xhr.status < 200 || xhr.status >= 300) {
+                    const errorMessage = result.error || `伺服器回應錯誤（${xhr.status}）`;
+                    showUploadProgress(0, `上傳失敗：${errorMessage}`, 'error');
+                    console.error('上傳失敗:', errorMessage);
+                } else {
+                    console.log(result);
+                    const convertedFiles = Array.isArray(result.files) ? result.files : [];
+                    const duplicatePendingIds = new Set();
+                    pendingFiles.forEach((pendingFile, index) => {
+                        const convertedFile = convertedFiles.find(file => file.source_name === pendingFile.name)
+                            || convertedFiles[index]
+                            || {};
+                        if (convertedFile.duplicate) {
+                            if (pendingFile.url.startsWith('blob:')) URL.revokeObjectURL(pendingFile.url);
+                            duplicatePendingIds.add(pendingFile.id);
+                            return;
+                        }
+                        if (!convertedFile.pdf_url) return;
+                        if (pendingFile.url.startsWith('blob:')) URL.revokeObjectURL(pendingFile.url);
+                        pendingFile.url = convertedFile.pdf_url;
+                        pendingFile.name = convertedFile.display_name || pendingFile.name;
+                        pendingFile.year = convertedFile.year || getFileYear(pendingFile);
+                        pendingFile.fileNumber = convertedFile.file_number || getFileNumber(pendingFile);
+                        pendingFile.lawCategory = convertedFile.law_category || getLawCategory(pendingFile);
+                        pendingFile.documentId = convertedFile.document_id || null;
+                        pendingFile.txtName = convertedFile.txt_name || null;
+                        pendingFile.txtUrl = convertedFile.txt_url || null;
+                        pendingFile.jsonUrl = convertedFile.json_url || null;
+                        pendingFile.processingStatus = convertedFile.processing_status || 'completed';
+                        pendingFile.validationErrors = Array.isArray(convertedFile.validation_errors) ? convertedFile.validation_errors : [];
+                        pendingFile.parsedSummary = convertedFile.parsed_summary || null;
+                    });
+                    if (duplicatePendingIds.size) {
+                        uploadedFiles = uploadedFiles.filter(file => !duplicatePendingIds.has(file.id));
+                    }
+                    saveLibraryFiles();
+                    refreshYearSelect();
+                    refreshLawSelect();
+                    updateDisplays();
+                    // 若瀏覽器沒有送出可計算的 progress 事件，收到成功回應時補上完成狀態。
+                    if (!uploadProgressCompleted) {
+                        uploadProgressCompleted = true;
+                    }
+                    const needsReview = convertedFiles.some(file => file.processing_status === 'needs_review');
+                    const duplicateCount = convertedFiles.filter(file => file.duplicate).length;
+                    const completionLabel = activeLibraryCategory === defaultLibraryCategory
+                        ? (needsReview ? '轉換完成，部分 JSON 需要人工確認' : 'PDF、TXT 與 JSON 已完成')
+                        : 'PDF 與 TXT 已完成';
+                    showUploadProgress(
+                        100,
+                        duplicateCount ? `${completionLabel}，略過 ${duplicateCount} 份已上傳文件` : completionLabel,
+                        'complete'
+                    );
+                    fadeOutUploadProgress();
+                }
+
+                dropZone.classList.remove('is-uploading');
+                fileInput.disabled = false;
+            });
+
+            xhr.addEventListener('error', () => {
+                showUploadProgress(0, '上傳失敗，請確認後端服務是否啟動', 'error');
+                console.error('上傳失敗：無法連線到 /convert');
+                dropZone.classList.remove('is-uploading');
+                fileInput.disabled = false;
+            });
+
+            xhr.addEventListener('abort', () => {
+                showUploadProgress(0, '上傳已取消', 'error');
+                dropZone.classList.remove('is-uploading');
+                fileInput.disabled = false;
+            });
+
+            xhr.send(formData);
+        }
+
+        // 第一工作區暫存已完成上傳的檔案，重新整理或從其他步驟返回時仍可使用。
+        if (!isCaseNoteMode) {
+            // 第一步固定使用歷史訴願決定書，不再從瀏覽器暫存恢復其他分類。
+            activeLibraryCategory = defaultLibraryCategory;
+            const savedYear = sessionStorage.getItem(libraryYearStorageKey);
+            if (savedYear) activeLibraryYear = savedYear;
+            const savedLaw = sessionStorage.getItem(libraryLawStorageKey);
+            if (savedLaw) activeLibraryLaw = savedLaw;
+            libraryCategorySelect.value = activeLibraryCategory;
+            updateUploadCopy();
+            uploadedFiles = restoreLibraryFiles();
+            refreshYearSelect();
+            refreshLawSelect();
+            updateDisplays();
+            syncHistoricalDocuments();
+        }
+
+        // 頁面初次載入時保持乾淨，只在真的選擇檔案後才顯示上傳狀態。
+        hideUploadProgress();
+
+        // 第二步案件的筆記模式：沿用閱讀器，但左側改為第二步的分析佇列。
+        if (isCaseNoteMode) {
+            jsonTab.hidden = true;
+            jsonOpenLink.hidden = true;
+            window.setInspectorTab('notes');
+            const pdfUrl = pageParams.get('file') || '';
+            const filename = pageParams.get('name') || '待審訴願書.pdf';
+            const focusText = pageParams.get('focus_text') || '';
+            if (focusText) {
+                pendingFocusRequest = {
+                    text: focusText,
+                    exact: pageParams.get('focus_exact') === '1',
+                    issue: pageParams.get('focus_issue') || '',
+                    page: pageParams.get('focus_page') || ''
+                };
+            }
+
+            // 新案件使用獨立的 /case-uploads/；舊版已存在的案件仍允許從 /uploads/ 開啟。
+            if (!pdfUrl.startsWith('/case-uploads/') && !pdfUrl.startsWith('/uploads/')) {
+                window.location.replace('/case-analysis');
+            } else {
+                document.querySelectorAll('.process-step').forEach(step => {
+                    const isActive = step.dataset.step === '2';
+                    step.classList.toggle('active', isActive);
+                    if (isActive) step.setAttribute('aria-current', 'step');
+                    else step.removeAttribute('aria-current');
+                });
+
+                const closeButton = document.querySelector('.close-btn');
+                closeButton.textContent = '← 回到案件分析';
+                closeButton.setAttribute('aria-label', '回到案件分析');
+
+                document.body.classList.add('case-note-mode');
+
+                const sidebarHeader = document.querySelector('#homeScreen .workspace-header');
+                sidebarHeader.querySelector('.brand-mark').textContent = '02';
+                const sidebarTitle = sidebarHeader.querySelector('h1');
+                sidebarTitle.textContent = '分析佇列';
+                sidebarHeader.querySelector('.workspace-subtitle').textContent = '切換目前要檢視與分析的待審訴願書。';
+                const caseCountLabel = document.querySelector('#homeScreen .library-label');
+                caseCountLabel.childNodes[0].textContent = '待審案件 ';
+                const sidebarTitleRow = document.createElement('div');
+                sidebarTitleRow.className = 'case-sidebar-title-row';
+                sidebarTitle.parentNode.insertBefore(sidebarTitleRow, sidebarTitle);
+                sidebarTitleRow.append(sidebarTitle, caseCountLabel);
+                emptyState.textContent = '目前沒有可檢視的待審案件';
+
+                let savedQueue = [];
+                try {
+                    const savedQueueText = localStorage.getItem('case-analysis-queue')
+                        || sessionStorage.getItem('case-analysis-queue')
+                        || '[]';
+                    const parsedQueue = JSON.parse(savedQueueText);
+                    if (Array.isArray(parsedQueue)) savedQueue = parsedQueue;
+                } catch (_error) {
+                    savedQueue = [];
+                }
+
+                uploadedFiles = savedQueue
+                    .filter(file => file.pdfUrl && (
+                        file.pdfUrl.startsWith('/case-uploads/') || file.pdfUrl.startsWith('/uploads/')
+                    ))
+                    .map(file => ({
+                        id: file.id,
+                        name: file.name,
+                        size: formatBytes(file.size),
+                        url: file.pdfUrl
+                    }));
+
+                let currentFile = uploadedFiles.find(file => file.url === pdfUrl || file.name === filename);
+                if (!currentFile) {
+                    currentFile = {
+                        id: `case-note-${Date.now()}`,
+                        name: filename,
+                        size: 'PDF 文件',
+                        url: pdfUrl
+                    };
+                    uploadedFiles.unshift(currentFile);
+                }
+
+                const libraryToggle = document.getElementById('libraryPanelToggle');
+                libraryToggle.title = '收合／展開分析佇列';
+                libraryToggle.setAttribute('aria-label', '收合分析佇列');
+
+                openReader(currentFile);
+            }
+        }
+    </script>
+</body>
+</html>

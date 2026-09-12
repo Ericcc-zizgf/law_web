@@ -1,0 +1,8 @@
+-r requirements.txt
+
+# 僅供 Apple Silicon 本機的歷史案例向量／MLX 研究工具使用。
+# AWS 網頁部署不安裝這些套件。
+chromadb
+mlx-lm
+mlx-embedding-models
+transformers>=5

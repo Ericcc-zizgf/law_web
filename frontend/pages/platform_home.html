@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>訴願書判決工具平台</title>
+    <style>
+        :root {
+            --navy: #102a43;
+            --teal: #0f766e;
+            --amber: #b7791f;
+            --canvas: #fbfcfc;
+            --paper: #ffffff;
+            --ink: #20313f;
+            --muted: #647585;
+            --line: #d4e0e4;
+        }
+        * { box-sizing: border-box; }
+        body { margin: 0; color: var(--ink); background: var(--canvas); font-family: "Noto Sans TC", "PingFang TC", "Microsoft JhengHei", sans-serif; }
+        a { color: inherit; text-decoration: none; }
+        .topbar { height: 72px; border-bottom: 1px solid var(--line); background: rgba(255,255,255,.94); }
+        .frame { width: min(1200px, calc(100% - 48px)); margin: 0 auto; }
+        .topbar .frame { height: 100%; display: flex; justify-content: space-between; align-items: center; }
+        .brand { display: flex; align-items: center; gap: 12px; font-weight: 750; letter-spacing: .02em; color: var(--navy); }
+        .brand-mark { display: grid; place-items: center; width: 34px; height: 34px; border-radius: 9px; background: var(--navy); color: white; font-size: 15px; }
+        .internal { color: var(--muted); font-size: 14px; }
+        main { padding: 76px 0 88px; }
+        .eyebrow { margin: 0 0 18px; color: var(--teal); font-size: 13px; font-weight: 800; letter-spacing: .14em; }
+        h1 { max-width: 760px; margin: 0; color: var(--navy); font-size: clamp(36px, 5vw, 58px); line-height: 1.18; letter-spacing: -.055em; }
+        .intro { max-width: 760px; margin: 23px 0 58px; color: var(--muted); font-size: 18px; line-height: 1.8; }
+        .workflow { display: grid; grid-template-columns: repeat(3, 1fr); gap: 64px; position: relative; padding-top: 10px; }
+        .workflow-node { --node-color: #102a43; position: relative; display: flex; flex-direction: column; min-height: 322px; padding: 72px 30px 28px; border: 7px solid var(--node-color); border-radius: 34px; background: var(--paper); box-shadow: none; transition: transform .2s ease, box-shadow .2s ease; }
+        .workflow-node:nth-child(2) { --node-color: #0f766e; }
+        .workflow-node:nth-child(3) { --node-color: #b7791f; }
+        .workflow-node:hover, .workflow-node:focus-visible { transform: translateY(-5px); box-shadow: 0 15px 30px rgba(18, 43, 62, .10); outline: none; }
+        .workflow-node:not(:last-child)::after { content: "→"; position: absolute; z-index: 2; right: -58px; top: 50%; transform: translateY(-50%); color: #8296a2; font-size: 45px; font-weight: 400; line-height: 1; }
+        .step { position: absolute; z-index: 2; top: -27px; right: 22px; display: grid; place-items: center; width: 54px; height: 54px; border: 7px solid var(--node-color); border-radius: 50%; background: white; color: var(--node-color); font-size: 11px; font-weight: 800; letter-spacing: .04em; }
+        .workflow-node h2 { margin: 0 0 16px; color: var(--navy); font-size: 23px; line-height: 1.42; letter-spacing: -.03em; }
+        .workflow-node p { margin: 0; color: var(--muted); font-size: 16px; line-height: 1.75; }
+        .node-link { display: inline-flex; align-items: center; gap: 8px; margin-top: auto; padding-top: 22px; color: var(--navy); font-size: 14px; font-weight: 750; }
+        .workflow-node:nth-child(2) .node-link { color: var(--teal); }
+        .workflow-node:nth-child(3) .node-link { color: #986016; }
+        .footer { border-top: 1px solid var(--line); background: #f7f9f9; padding: 26px 0; color: var(--muted); font-size: 13px; }
+        @media (max-width: 820px) {
+            main { padding-top: 54px; }
+            .workflow { grid-template-columns: 1fr; gap: 46px; }
+            .workflow-node { min-height: 250px; }
+            .workflow-node:not(:last-child)::after { right: auto; left: 50%; top: auto; bottom: -38px; transform: translateX(-50%) rotate(90deg); }
+        }
+        @media (max-width: 560px) {
+            .frame { width: min(100% - 32px, 1200px); }
+            .topbar { height: 64px; }
+            .internal { display: none; }
+            .intro { margin-bottom: 38px; font-size: 16px; }
+            .workflow-node { padding: 24px; }
+            .workflow-node h2 { margin-top: 26px; }
+        }
+    </style>
+</head>
+<body>
+    <header class="topbar">
+        <div class="frame">
+            <div class="brand"><span class="brand-mark">訴</span><span>訴願書判決工具平台</span></div>
+            <span class="internal">法制局內部使用</span>
+        </div>
+    </header>
+
+    <main class="frame">
+        <p class="eyebrow">WORKFLOW</p>
+        <h1>從資料建庫到判決建議，<br>在同一個工作流程完成。</h1>
+        <p class="intro">請依序完成歷史資料匯入、待審案件分析與判決建議生成。每個節點各自獨立，案件資料與處理結果也能清楚追溯。</p>
+
+        <section class="workflow" aria-label="訴願書判決工作流程">
+            <a class="workflow-node" href="/data-library">
+                <div class="step">01</div>
+                <h2>匯入歷史訴願書<br>與相關法律資料</h2>
+                <p>將歷史訴願決定書、法規或其他參考 PDF 匯入並整理，建立後續案件比對可使用的資料庫。</p>
+                <span class="node-link">進入資料庫工作區 <span aria-hidden="true">→</span></span>
+            </a>
+            <a class="workflow-node" href="/case-analysis">
+                <div class="step">02</div>
+                <h2>批次上傳待審訴願書<br>分析主要爭議點</h2>
+                <p>批次匯入待審案件，萃取案件事實與理由，整理主要爭點並尋找可參考的歷史資料。</p>
+                <span class="node-link">前往案件分析頁 <span aria-hidden="true">→</span></span>
+            </a>
+            <a class="workflow-node" href="/decision-recommendation">
+                <div class="step">03</div>
+                <h2>生成判決建議<br>供承辦人校閱</h2>
+                <p>依案件內容與比對結果彙整判決建議，保留法條、案例與理由脈絡，交由承辦人確認。</p>
+                <span class="node-link">前往判決建議頁 <span aria-hidden="true">→</span></span>
+            </a>
+        </section>
+
+    </main>
+
+    <footer class="footer"><div class="frame">訴願書判決工具平台・新北市政府法制局</div></footer>
+</body>
+</html>

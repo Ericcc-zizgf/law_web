@@ -1,0 +1,89 @@
+# AWS Demo 部署說明
+
+## 採用架構
+
+依 `Supported AWS Services List 20260722.xlsx` 的權限，Demo 採用：
+
+- Elastic Beanstalk：執行 Flask／Gunicorn
+- EC2：由 Elastic Beanstalk 管理執行個體
+- EFS：保存第一步與第二步上傳檔案
+- Secrets Manager 或 SSM Parameter Store：保存研究 API 存取碼與 Gemini API Key
+- CloudWatch Logs：保存應用程式與錯誤紀錄
+- ACM：自訂網域時提供 HTTPS 憑證
+
+App Runner 不在可用服務清單，因此不採用。S3、DynamoDB、S3 Vectors 均可用，保留給正式版改造。
+
+## 部署前檔案
+
+- `application.py`：Elastic Beanstalk WSGI 入口
+- `Procfile`：以 Gunicorn 在 8000 埠啟動
+- `requirements.txt`：AWS 網頁所需的精簡套件
+- `requirements-rag.txt`：僅供 Apple Silicon 本機 RAG／MLX 工具
+- `.ebignore`：排除 2 GB 以上的 `.venv`、測試與本機產物
+- `.platform/nginx/conf.d/legal-demo.conf`：允許 50 MB PDF 與較長分析時間
+
+## AWS 建立順序
+
+1. 選定一個 AWS Region，後續 EFS、Elastic Beanstalk、Secrets Manager 都使用同一區域。
+2. 建立 VPC 或使用活動提供的既有 VPC。
+3. 建立 EFS，並在 Elastic Beanstalk 使用的每個子網建立 mount target。
+4. EFS security group 開放 TCP 2049，但來源只允許 Elastic Beanstalk EC2 的 security group。
+5. 將 EFS 掛載到 `/mnt/efs`，建立 `/mnt/efs/legal-demo`。
+6. 建立 Secrets Manager secrets：`legal-demo/research-access-code`、`legal-demo/gemini-api-key`。
+7. 建立 Elastic Beanstalk Python 環境。Demo 可先使用 Single instance。
+8. 將環境的健康檢查路徑設為 `/health`。
+9. 設定下列環境變數：
+
+   - `PERSISTENT_DATA_ROOT=/mnt/efs/legal-demo`
+   - `RESEARCH_API_BASE_URL=https://temporal-law-api-867487539733.asia-east1.run.app`
+   - `ALLOW_CUSTOM_RESEARCH_API_URL=false`
+   - `RESEARCH_ACCESS_CODE`：由 Secrets Manager 注入
+   - `GEMINI_API_KEY`：由 Secrets Manager 注入
+
+10. 部署專案原始碼。
+11. 將既有 `uploads/`、`case_uploads/`、`data/processed/json_web_uploads/` 搬到 EFS 對應位置。
+12. 測試完成後，再以 ACM、Load Balancer 與自訂網域啟用 HTTPS。
+
+## EB CLI 指令
+
+先在 AWS 提供的終端環境完成憑證與 Region 設定，再於專案根目錄執行：
+
+```bash
+eb init
+eb create legal-demo-env --single
+eb deploy
+eb status
+eb open
+```
+
+實際環境名稱與 Region 依活動帳號規則選擇。不要把 Access Key、Secret Access Key、Gemini API Key 寫入檔案或指令歷史。
+
+## 資料目錄
+
+設定 `PERSISTENT_DATA_ROOT=/mnt/efs/legal-demo` 後，程式會使用：
+
+```text
+/mnt/efs/legal-demo/
+├── uploads/
+├── case_uploads/
+└── data/processed/json_web_uploads/
+```
+
+沒有設定時仍使用專案內原本的資料夾，因此本機啟動方式不變。
+
+## 驗證清單
+
+1. `GET /health` 回傳 `{"status":"ok"}`。
+2. 首頁、第一步、第二步、第三步都能開啟。
+3. 第一部上傳 PDF 後能產生 TXT 與 JSON。
+4. 重新啟動環境後，第一步資料仍存在。
+5. 第二步能建立 case_id、補充卷證並執行分析。
+6. 重新整理後能還原案件與本 Session 歷次研究。
+7. 第三步能讀取同一案件資料。
+8. 瀏覽器開發者工具中沒有伺服器端 Gemini API Key。
+9. 任意研究 API 網址不能覆蓋伺服器設定。
+10. CloudWatch Logs 沒有 4xx／5xx 或 Gunicorn timeout。
+
+## 正式版後續
+
+Demo 穩定後可將 PDF／TXT／JSON 從 EFS 改存 S3，metadata 改存 DynamoDB，相似案例向量改存 S3 Vectors。這些服務都在目前允許清單內。

@@ -1,0 +1,2543 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>待審訴願書分析・訴願書判決工具平台</title>
+    <style>
+        :root {
+            --navy: #102a43;
+            --teal: #0f766e;
+            --ink: #20313f;
+            --muted: #647585;
+            --line: #d4e0e4;
+            --canvas: #f5f8f8;
+            --paper: #fff;
+        }
+
+        * { box-sizing: border-box; }
+        body {
+            margin: 0;
+            background: var(--canvas);
+            color: var(--ink);
+            font-family: "Noto Sans TC", "PingFang TC", "Microsoft JhengHei", sans-serif;
+        }
+        a { color: inherit; text-decoration: none; }
+
+        .process-rail {
+            position: fixed;
+            inset: 0 auto 0 0;
+            z-index: 5;
+            width: 88px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 28px 0;
+            background: #fff;
+            border-right: 1px solid var(--line);
+        }
+        .process-rail-title {
+            margin: 0 0 32px;
+            color: #82909b;
+            font-size: 10px;
+            font-weight: 800;
+            letter-spacing: .16em;
+            writing-mode: vertical-rl;
+        }
+        .process-steps {
+            position: relative;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 58px;
+            margin: 0;
+            padding: 12px 0;
+        }
+        .process-steps::before {
+            content: "";
+            position: absolute;
+            top: 32px;
+            bottom: 32px;
+            left: 50%;
+            width: 1px;
+            background: #d8e1e5;
+            transform: translateX(-50%);
+        }
+        .process-step {
+            --rail-color: #aebdc5;
+            position: relative;
+            z-index: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 38px;
+            height: 38px;
+            border: 2px solid var(--rail-color);
+            border-radius: 50%;
+            background: #fff;
+            color: #71818c;
+            font-size: 10px;
+            font-weight: 800;
+            transition: transform .18s ease, border-color .18s ease, color .18s ease, box-shadow .18s ease, background-color .18s ease;
+        }
+        .process-step[data-step="1"] { --rail-color: var(--navy); }
+        .process-step[data-step="2"] { --rail-color: var(--teal); }
+        .process-step[data-step="3"] { --rail-color: #b7791f; }
+        .process-step:hover,
+        .process-step:focus-visible {
+            color: var(--rail-color);
+            outline: none;
+            transform: scale(1.14);
+        }
+        .process-step.active {
+            color: #fff;
+            background: var(--rail-color);
+            box-shadow: 0 0 0 5px color-mix(in srgb, var(--rail-color) 18%, transparent), 0 0 14px color-mix(in srgb, var(--rail-color) 32%, transparent);
+        }
+        .process-step-label {
+            position: absolute;
+            left: 48px;
+            padding: 7px 9px;
+            border: 1px solid var(--line);
+            border-radius: 7px;
+            color: #3e515e;
+            background: #fff;
+            font-size: 12px;
+            font-weight: 700;
+            white-space: nowrap;
+            opacity: 0;
+            pointer-events: none;
+            transform: translateX(-5px);
+            transition: opacity .18s ease, transform .18s ease;
+        }
+        .process-step:hover .process-step-label,
+        .process-step:focus-visible .process-step-label {
+            opacity: 1;
+            transform: translateX(0);
+        }
+
+        main {
+            width: 100%;
+            max-width: none;
+            margin: 0;
+            padding: 40px 32px 76px 120px;
+        }
+        .workspace-header {
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            gap: 24px;
+            min-height: 74px;
+            margin-bottom: 26px;
+        }
+        .workspace-actions { display: flex; align-items: center; gap: 10px; flex: 0 0 auto; }
+        .brand-lockup { display: flex; align-items: flex-start; gap: 15px; }
+        .brand-mark {
+            display: grid;
+            place-items: center;
+            width: 46px;
+            height: 46px;
+            flex: 0 0 auto;
+            border-radius: 14px;
+            color: #fff;
+            background: var(--ink);
+            box-shadow: 0 8px 18px rgba(24, 43, 58, .16);
+            font-size: 19px;
+            font-weight: 800;
+            letter-spacing: .08em;
+        }
+        .workspace-header h1 {
+            margin: 0;
+            color: var(--ink);
+            font-size: clamp(24px, 3vw, 34px);
+            line-height: 1.18;
+            letter-spacing: -.04em;
+        }
+        .workspace-subtitle {
+            max-width: 620px;
+            margin: 9px 0 0;
+            color: var(--muted);
+            font-size: 14px;
+            line-height: 1.65;
+        }
+        .workspace-badge {
+            padding: 8px 11px;
+            border: 1px solid #d79a9a;
+            border-radius: 999px;
+            color: #a33f45;
+            background: #fff8f8;
+            font-size: 13px;
+            font-weight: 700;
+            white-space: nowrap;
+            transition: background-color .18s ease, border-color .18s ease, color .18s ease;
+        }
+        .workspace-badge:hover,
+        .workspace-badge:focus-visible {
+            border-color: #bc6267;
+            color: #8f2f37;
+            background: #fff0f0;
+            outline: none;
+        }
+
+        .workspace-grid {
+            display: grid;
+            grid-template-columns: minmax(0, 1.15fr) minmax(320px, .85fr);
+            gap: 22px;
+            align-items: stretch;
+        }
+        .workspace-grid > .panel {
+            height: 362px;
+            min-height: 362px;
+            overflow: hidden;
+        }
+        .upload-panel,
+        .queue-panel {
+            display: flex;
+            flex-direction: column;
+        }
+        .panel {
+            border: 1px solid var(--line);
+            border-radius: 18px;
+            background: var(--paper);
+            box-shadow: 0 8px 24px rgba(16, 42, 67, .04);
+        }
+        .panel-heading {
+            display: flex;
+            align-items: flex-start;
+            gap: 15px;
+            padding: 26px 28px 18px;
+        }
+        .panel h2 {
+            margin: 0;
+            color: var(--navy);
+            font-size: 21px;
+            line-height: 1.4;
+        }
+        .panel-heading p {
+            margin: 5px 0 0;
+            color: var(--muted);
+            font-size: 14px;
+            line-height: 1.6;
+        }
+
+        .dropzone {
+            --upload-progress: 0%;
+            position: relative;
+            overflow: hidden;
+            display: flex;
+            flex: 1;
+            min-height: 0;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            margin: 0 26px 26px;
+            padding: 34px 24px;
+            border: 1px dashed #9eb8b7;
+            border-radius: 14px;
+            background: #fff;
+            text-align: center;
+            transition: border-color .2s ease, background-color .2s ease, transform .2s ease;
+        }
+        .dropzone::before {
+            content: "";
+            position: absolute;
+            inset: 0 auto 0 0;
+            z-index: 0;
+            width: var(--upload-progress);
+            border-radius: inherit;
+            background: linear-gradient(90deg, rgba(141, 202, 181, .62), rgba(224, 242, 235, .82));
+            opacity: 0;
+            pointer-events: none;
+            transition: width .16s ease, opacity .2s ease;
+        }
+        .dropzone > * { position: relative; z-index: 1; }
+        .dropzone.has-upload-progress::before { opacity: 1; }
+        .dropzone:hover {
+            border-color: var(--teal);
+            background: #eaf7f3;
+        }
+        .dropzone.is-dragging {
+            border-color: var(--teal);
+            background: #eaf7f3;
+            transform: scale(1.006);
+        }
+        .dropzone.is-uploading {
+            border-color: var(--teal);
+            background: #f3faf7;
+        }
+        .dropzone.is-uploading .outline-action {
+            opacity: .55;
+            pointer-events: none;
+        }
+        .dropzone.is-progress-fading::before {
+            opacity: 0;
+            transition: opacity 1s ease;
+        }
+        .dropzone strong { display: block; color: var(--ink); font-size: 17px; }
+        .dropzone p { margin: 7px 0 18px; color: var(--muted); font-size: 14px; }
+        .case-file-input {
+            position: absolute;
+            width: 1px;
+            height: 1px;
+            overflow: hidden;
+            clip: rect(0 0 0 0);
+            clip-path: inset(50%);
+            white-space: nowrap;
+        }
+        .outline-action {
+            display: inline-flex;
+            padding: 9px 14px;
+            border: 1px solid var(--teal);
+            border-radius: 8px;
+            color: #fff;
+            background: var(--teal);
+            box-shadow: 0 5px 13px rgba(15, 118, 110, .2);
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 750;
+            transition: color .18s ease, background-color .18s ease, border-color .18s ease, transform .18s ease;
+        }
+        .outline-action:hover,
+        .outline-action:focus-visible {
+            border-color: #0a5d56;
+            color: #fff;
+            background: #0a5d56;
+            outline: none;
+            transform: translateY(-1px);
+        }
+        .upload-progress {
+            position: absolute;
+            inset: 0;
+            z-index: 2;
+            display: flex;
+            align-items: flex-end;
+            justify-content: flex-end;
+            padding: 0 20px 12px;
+            pointer-events: none;
+            opacity: 1;
+            transition: opacity 1s ease;
+        }
+        .upload-progress[hidden] { display: none !important; }
+        .dropzone.is-progress-fading .upload-progress { opacity: 0; }
+        .upload-progress-copy {
+            display: flex;
+            flex-direction: column;
+            align-items: flex-end;
+            gap: 2px;
+            min-width: 150px;
+            color: rgba(82, 98, 112, .68);
+            font-size: 12px;
+            font-weight: 700;
+            text-align: right;
+            text-shadow: 0 1px 1px rgba(255, 255, 255, .35);
+        }
+        .upload-progress-percent {
+            color: rgba(82, 98, 112, .72);
+            font-size: 13px;
+            font-variant-numeric: tabular-nums;
+        }
+        .upload-progress.is-error .upload-progress-copy { color: #a33f45; }
+        .upload-progress-track { display: none; }
+
+        .panel-top {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 26px 28px 18px;
+        }
+        .panel-top h2 { font-size: 21px; }
+        .status-chip {
+            display: inline-flex;
+            align-items: center;
+            padding: 6px 9px;
+            border-radius: 99px;
+            color: #71818c;
+            background: #f1f4f5;
+            font-size: 12px;
+            font-weight: 750;
+        }
+        .status-chip.is-uploading { color: var(--teal); background: #e6f4f1; }
+        .status-chip.is-complete { color: #2f7654; background: #e8f5ed; }
+        .status-chip.is-error { color: #a33f45; background: #fff0f0; }
+        .queue-scroll {
+            flex: 1;
+            min-height: 0;
+            margin: 0 26px 26px;
+            overflow-y: auto;
+            overscroll-behavior: contain;
+            border: 1px solid #edf1f2;
+            border-radius: 14px;
+            background: #fbfcfc;
+            scrollbar-color: #bfd1cd transparent;
+            scrollbar-width: thin;
+        }
+        .queue-scroll::-webkit-scrollbar { width: 8px; }
+        .queue-scroll::-webkit-scrollbar-thumb {
+            border: 2px solid transparent;
+            border-radius: 999px;
+            background: #bfd1cd;
+            background-clip: padding-box;
+        }
+        .queue-empty {
+            min-height: 100%;
+            margin: 0;
+            padding: 36px 24px;
+            display: grid;
+            place-items: center;
+            color: #8a98a0;
+            text-align: center;
+            font-size: 14px;
+            line-height: 1.7;
+        }
+        .queue-empty[hidden] { display: none !important; }
+        .queue-empty strong { display: block; color: #51636f; font-size: 16px; }
+        .queue-list {
+            display: flex;
+            flex-direction: column;
+            gap: 9px;
+            min-height: 100%;
+            margin: 0;
+            padding: 10px;
+        }
+        .queue-list[hidden] { display: none; }
+        .queue-item {
+            display: grid;
+            grid-template-columns: 36px minmax(0, 1fr);
+            gap: 11px;
+            align-items: center;
+            padding: 12px;
+            border: 1px solid #dbe7e5;
+            border-radius: 11px;
+            background: #fbfdfc;
+            transition: border-color .18s ease, background-color .18s ease, box-shadow .18s ease, transform .18s ease;
+        }
+        .queue-item.is-ready:hover {
+            border-color: #9fc9c1;
+            background: #f6fbf9;
+            box-shadow: 0 5px 14px rgba(15, 118, 110, .08);
+            transform: translateY(-1px);
+        }
+        .queue-item.is-ready { cursor: pointer; }
+        .queue-item.is-selected {
+            border-color: var(--teal);
+            background: #eef8f5;
+            box-shadow: inset 3px 0 0 var(--teal), 0 5px 14px rgba(15, 118, 110, .1);
+        }
+        .queue-file-content { min-width: 0; }
+        .queue-file-select {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            margin-bottom: 5px;
+            color: #819099;
+            font-size: 11px;
+            cursor: pointer;
+        }
+        .queue-file-select input { width: 14px; height: 14px; accent-color: var(--teal); cursor: pointer; }
+        .queue-file-icon {
+            display: grid;
+            place-items: center;
+            width: 36px;
+            height: 42px;
+            padding: 0;
+            border: 1px solid #bdd5cf;
+            border-radius: 8px;
+            color: var(--teal);
+            background: #f2faf7;
+            cursor: pointer;
+            font-family: inherit;
+            font-size: 10px;
+            font-weight: 800;
+            transition: border-color .18s ease, background-color .18s ease, color .18s ease, transform .18s ease, box-shadow .18s ease;
+        }
+        .queue-file-icon:not(:disabled):hover,
+        .queue-file-icon:not(:disabled):focus-visible {
+            border-color: var(--teal);
+            color: #fff;
+            background: var(--teal);
+            outline: none;
+            box-shadow: 0 5px 12px rgba(15, 118, 110, .18);
+            transform: translateY(-1px);
+        }
+        .queue-file-icon:disabled {
+            cursor: wait;
+            opacity: .58;
+        }
+        .queue-file-copy {
+            min-width: 0;
+            width: 100%;
+            padding: 5px 4px;
+            border: 0;
+            color: inherit;
+            background: transparent;
+            cursor: pointer;
+            font: inherit;
+            text-align: left;
+        }
+        .queue-file-copy:disabled { cursor: wait; }
+        .queue-file-copy:focus-visible {
+            border-radius: 7px;
+            outline: 2px solid rgba(15, 118, 110, .42);
+            outline-offset: 3px;
+        }
+        .queue-file-name {
+            overflow: hidden;
+            color: var(--ink);
+            font-size: 13px;
+            font-weight: 750;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .queue-file-meta { margin-top: 4px; color: #819099; font-size: 12px; }
+        .queue-support-actions {
+            display: flex;
+            align-items: center;
+            gap: 7px;
+            margin-top: 9px;
+        }
+        .queue-support-role {
+            min-width: 0;
+            max-width: 180px;
+            padding: 5px 7px;
+            border: 1px solid var(--line);
+            border-radius: 7px;
+            color: var(--muted);
+            background: #fff;
+            font: inherit;
+            font-size: 11px;
+        }
+        .queue-support-button {
+            display: inline-flex;
+            align-items: center;
+            min-height: 28px;
+            padding: 5px 8px;
+            border: 1px solid #b9d1cb;
+            border-radius: 7px;
+            color: var(--teal);
+            background: #f4fbf8;
+            cursor: pointer;
+            font-size: 11px;
+            font-weight: 750;
+            white-space: nowrap;
+        }
+        .queue-support-button:hover,
+        .queue-support-button:focus-within { border-color: var(--teal); color: #fff; background: var(--teal); outline: none; }
+        .queue-support-input { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); clip-path: inset(50%); }
+        .queue-file-remove {
+            margin-top: 8px;
+            padding: 4px 8px;
+            border: 1px solid #e1a5a5;
+            border-radius: 7px;
+            color: #a33f45;
+            background: #fff8f8;
+            cursor: pointer;
+            font: inherit;
+            font-size: 11px;
+            font-weight: 750;
+        }
+        .queue-file-remove:hover,
+        .queue-file-remove:focus-visible { border-color: #bc6267; color: #fff; background: #a33f45; outline: none; }
+        .queue-selection-button {
+            min-height: 32px;
+            padding: 6px 10px;
+            border: 1px solid #e1a5a5;
+            border-radius: 8px;
+            color: #a33f45;
+            background: #fff8f8;
+            cursor: pointer;
+            font: inherit;
+            font-size: 11px;
+            font-weight: 750;
+        }
+        .queue-selection-button:hover,
+        .queue-selection-button:focus-visible { border-color: #bc6267; color: #fff; background: #a33f45; outline: none; }
+        .queue-selection-button:disabled { cursor: not-allowed; opacity: .45; }
+        .queue-panel .panel-top { align-items: center; }
+        .queue-panel-actions { display: flex; align-items: center; gap: 8px; }
+        .analysis-panel { margin-top: 22px; padding: 26px 28px 28px; }
+        .section-heading {
+            display: flex;
+            align-items: end;
+            justify-content: space-between;
+            gap: 16px;
+            margin-bottom: 20px;
+        }
+        .section-heading h2 { font-size: 21px; }
+        .section-heading p { margin: 0; color: var(--muted); font-size: 13px; }
+        .analysis-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+        .analysis-card {
+            min-height: 145px;
+            padding: 18px;
+            border: 1px solid var(--line);
+            border-radius: 12px;
+            background: #fbfcfc;
+        }
+        .analysis-card span {
+            color: #8a98a0;
+            font-size: 12px;
+            font-weight: 800;
+            letter-spacing: .08em;
+        }
+        .analysis-card h3 { margin: 14px 0 8px; color: var(--navy); font-size: 17px; }
+        .analysis-card p { margin: 0; color: #87949c; font-size: 14px; line-height: 1.6; }
+        .issue-law-map { margin-top: 20px; padding-top: 20px; border-top: 1px solid var(--line); }
+        .issue-law-map[hidden] { display: none; }
+        .issue-law-map-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+        .issue-law-map-heading h3 { margin: 0; color: var(--navy); font-size: 17px; }
+        .issue-law-map-heading p { margin: 0; color: var(--muted); font-size: 12px; }
+        .issue-law-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 11px; }
+        .issue-filter-group { display: flex; flex-wrap: wrap; gap: 6px; }
+        .issue-filter-button { min-height: 28px; padding: 4px 8px; border: 1px solid var(--line); border-radius: 7px; color: var(--muted); background: #fff; cursor: pointer; font: inherit; font-size: 11px; font-weight: 750; }
+        .issue-filter-button:hover, .issue-filter-button:focus-visible, .issue-filter-button.is-active { border-color: var(--teal); color: #fff; background: var(--teal); outline: none; }
+        .issue-filter-button:disabled { cursor: not-allowed; color: #aab4b9; background: #f4f6f6; border-color: #e2e8e7; opacity: .72; }
+        .issue-filter-button:disabled:hover { color: #aab4b9; background: #f4f6f6; border-color: #e2e8e7; }
+        .issue-filter-status { color: #819099; font-size: 11px; white-space: nowrap; }
+        .issue-law-list { display: grid; gap: 11px; }
+        .issue-law-card { padding: 15px 17px; border: 1px solid #dbe7e5; border-radius: 11px; background: #fbfdfc; }
+        .issue-law-card:hover { border-color: #9fc9c1; background: #f6fbf9; }
+        .issue-law-card-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+        .issue-law-card h4 { margin: 0; color: var(--ink); font-size: 15px; line-height: 1.5; }
+        .issue-law-type { flex: 0 0 auto; padding: 4px 8px; border-radius: 99px; color: #2f7654; background: #e8f5ed; font-size: 10px; font-weight: 800; }
+        .issue-law-type.is-evidence-insufficient { color: #a33f45; background: #fff0f0; }
+        .issue-law-type.is-contradicted { color: #176c63; background: #e5f3ef; }
+        .issue-law-type.is-countered { color: #176c63; background: #e5f3ef; }
+        .issue-law-type.is-mixed { color: #7b6828; background: #fff7d9; }
+        .issue-law-type.is-supported { color: #2f7654; background: #e8f5ed; }
+        .issue-law-copy { margin: 8px 0 0; color: #657580; font-size: 13px; line-height: 1.65; }
+        .issue-law-copy strong { color: #435664; }
+        .issue-law-conclusion { margin: 8px 0 0; color: var(--muted); font-size: 12px; line-height: 1.6; }
+        .issue-law-group { margin-top: 11px; }
+        .issue-law-group-label { display: block; margin-bottom: 5px; color: #819099; font-size: 11px; font-weight: 800; }
+        .issue-law-sources { display: flex; flex-wrap: wrap; gap: 6px; }
+        .issue-law-source { display: inline-flex; align-items: center; gap: 6px; max-width: 100%; padding: 7px 9px; border: 1px solid #d3e4e0; border-radius: 9px; color: #246b63; background: #fff; box-shadow: 0 2px 6px rgba(24,82,75,.04); font-size: 11px; font-weight: 750; text-decoration: none; transition: border-color .18s ease, color .18s ease, background-color .18s ease, transform .18s ease, box-shadow .18s ease; }
+        .issue-law-source::before { content: "↗"; display: inline-grid; place-items: center; width: 19px; height: 19px; flex: 0 0 auto; border-radius: 6px; color: #fff; background: #7aaea5; font-size: 11px; font-weight: 900; }
+        .issue-law-source.is-law::before { content: "§"; background: #d69c43; }
+        .issue-law-source.is-document::before { content: "PDF"; width: 25px; color: #176c63; background: #e5f3ef; font-size: 8px; }
+        .issue-law-source:hover, .issue-law-source:focus-visible { border-color: #168276; color: #fff; background: #168276; box-shadow: 0 5px 12px rgba(22,130,118,.16); outline: none; transform: translateY(-1px); }
+        .issue-law-source small { overflow: hidden; color: #819099; font-size: 9px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+        .issue-law-source:hover small, .issue-law-source:focus-visible small { color: rgba(255,255,255,.82); }
+        .issue-law-source[type="button"] { cursor: pointer; font: inherit; }
+        .issue-law-empty { margin: 0; padding: 12px; border: 1px dashed #d8e3e2; border-radius: 9px; color: #89979e; font-size: 12px; }
+        .evidence-gap { margin-top: 14px; padding: 14px 16px; border: 1px solid #ead9b1; border-radius: 10px; background: #fffaf0; }
+        .evidence-gap[hidden] { display: none; }
+        .evidence-gap h4 { margin: 0; color: #86631f; font-size: 14px; }
+        .evidence-gap-list { display: grid; gap: 8px; margin-top: 9px; }
+        .evidence-gap-item { padding-top: 8px; border-top: 1px solid #f0e3c5; color: #6e6250; font-size: 12px; line-height: 1.6; }
+        .evidence-gap-item:first-child { padding-top: 0; border-top: 0; }
+        .evidence-gap-item strong { color: #66501f; }
+        .law-inline-preview { margin-top: 14px; padding: 16px; border: 1px solid #c8ded8; border-radius: 11px; background: #f4fbf8; }
+        .law-inline-preview[hidden] { display: none; }
+        .law-inline-preview-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+        .law-inline-preview h4 { margin: 0; color: var(--navy); font-size: 16px; }
+        .law-inline-preview a { color: var(--teal); font-size: 11px; }
+        .law-inline-preview-close { min-height: 28px; padding: 4px 8px; border: 1px solid var(--line); border-radius: 7px; color: var(--muted); background: #fff; cursor: pointer; font: inherit; font-size: 11px; }
+        .law-inline-preview-close:hover, .law-inline-preview-close:focus-visible { border-color: var(--teal); color: var(--teal); outline: none; }
+        .law-inline-preview-status { margin: 9px 0 0; color: var(--muted); font-size: 12px; }
+        .law-inline-preview-text { max-height: 320px; margin: 12px 0 0; padding: 12px; overflow: auto; border: 1px solid #dfeae7; border-radius: 8px; background: #fff; color: #50636e; white-space: pre-wrap; font: inherit; font-size: 12px; line-height: 1.7; }
+        .api-settings {
+            margin-top: 22px;
+            padding: 18px 22px;
+        }
+        .api-settings-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 14px;
+        }
+        .api-settings-header h2 { margin: 0; color: var(--navy); font-size: 17px; }
+        .api-settings-status { color: var(--muted); font-size: 12px; }
+        .api-settings-status.is-warning { color: #a2742b; }
+        .api-settings-status.is-success { color: #2f7654; }
+        .api-settings-toggle {
+            min-height: 34px;
+            padding: 6px 11px;
+            border: 1px solid var(--line);
+            border-radius: 8px;
+            color: var(--navy);
+            background: #fff;
+            cursor: pointer;
+            font: inherit;
+            font-size: 12px;
+            font-weight: 750;
+        }
+        .api-settings-toggle:hover,
+        .api-settings-toggle:focus-visible { border-color: var(--teal); color: var(--teal); outline: none; }
+        .api-settings[hidden] { display: none; }
+        .api-settings-grid {
+            display: grid;
+            grid-template-columns: minmax(220px, 1.3fr) minmax(160px, .8fr) minmax(160px, .8fr) auto;
+            gap: 10px;
+            align-items: end;
+            margin-top: 14px;
+        }
+        .api-settings-field { min-width: 0; }
+        .api-settings-field label { display: block; margin-bottom: 5px; color: var(--muted); font-size: 12px; font-weight: 700; }
+        .api-settings-field input {
+            width: 100%;
+            min-height: 36px;
+            padding: 7px 9px;
+            border: 1px solid var(--line);
+            border-radius: 8px;
+            color: var(--ink);
+            background: #fff;
+            font: inherit;
+            font-size: 12px;
+        }
+        .api-settings-save,
+        .analysis-action {
+            min-height: 36px;
+            padding: 7px 13px;
+            border: 1px solid var(--teal);
+            border-radius: 8px;
+            color: #fff;
+            background: var(--teal);
+            cursor: pointer;
+            font: inherit;
+            font-size: 12px;
+            font-weight: 750;
+        }
+        .api-settings-save:hover,
+        .analysis-action:hover { background: #0a5d56; }
+        .analysis-action:disabled { opacity: .5; cursor: not-allowed; }
+        .api-settings-note { margin: 9px 0 0; color: var(--muted); font-size: 12px; line-height: 1.5; }
+        .research-tools { margin-top: 22px; padding: 26px 28px 28px; }
+        .research-tools-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
+        .research-tool-card { min-width: 0; padding: 17px; border: 1px solid var(--line); border-radius: 12px; background: #fbfcfc; }
+        .research-tool-card h3 { margin: 0; color: var(--navy); font-size: 16px; }
+        .research-tool-card p { margin: 7px 0 12px; color: var(--muted); font-size: 12px; line-height: 1.6; }
+        .research-tool-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+        .research-tool-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+        .research-tool-button { min-height: 30px; padding: 5px 9px; border: 1px solid var(--line); border-radius: 7px; color: var(--navy); background: #fff; cursor: pointer; font: inherit; font-size: 11px; font-weight: 750; }
+        .research-tool-button:hover, .research-tool-button:focus-visible { border-color: var(--teal); color: var(--teal); outline: none; }
+        .research-tool-button.primary { border-color: var(--teal); color: #fff; background: var(--teal); }
+        .research-tool-button.primary:hover, .research-tool-button.primary:focus-visible { color: #fff; background: #0a5d56; }
+        .research-tool-button:disabled { cursor: not-allowed; opacity: .45; }
+        .research-tool-field { width: 100%; min-height: 34px; padding: 6px 8px; border: 1px solid var(--line); border-radius: 7px; color: var(--ink); background: #fff; font: inherit; font-size: 12px; }
+        .research-tool-form { display: grid; grid-template-columns: minmax(0, 1fr) minmax(80px, .45fr) auto; gap: 7px; align-items: end; }
+        .research-tool-form label { display: block; margin-bottom: 4px; color: var(--muted); font-size: 11px; font-weight: 750; }
+        .research-tool-form-field { min-width: 0; }
+        .research-tool-status { min-height: 20px; margin: 10px 0 0 !important; color: var(--muted) !important; }
+        .research-tool-status.is-error { color: #a33f45 !important; }
+        .research-tool-status.is-success { color: #2f7654 !important; }
+        .document-list, .audit-list, .history-snapshots { max-height: 190px; margin: 11px 0 0; padding: 0; overflow: auto; }
+        .document-list { list-style: none; }
+        .document-list li { padding: 7px 0; border-top: 1px solid #e7eeee; color: var(--ink); font-size: 12px; line-height: 1.5; }
+        .document-list li:first-child { border-top: 0; }
+        .document-list .type { display: block; color: #819099; font-size: 11px; }
+        .history-result[hidden], .audit-result[hidden] { display: none; }
+        .history-result h4 { margin: 12px 0 5px; color: var(--navy); font-size: 13px; }
+        .history-result a { color: var(--teal); font-size: 11px; }
+        .history-snapshots { display: grid; gap: 8px; }
+        .history-snapshot { padding: 9px; border: 1px solid #e2ece9; border-radius: 8px; background: #fff; }
+        .history-snapshot strong { color: var(--navy); font-size: 12px; }
+        .history-snapshot pre, .audit-list pre { margin: 5px 0 0; max-height: 120px; overflow: auto; white-space: pre-wrap; color: #657580; font: inherit; font-size: 11px; line-height: 1.5; }
+        .audit-list details { padding: 7px 0; border-top: 1px solid #e7eeee; color: var(--ink); font-size: 11px; }
+        .audit-list details:first-child { border-top: 0; }
+        .audit-list summary { cursor: pointer; font-weight: 750; }
+        .case-research-query { margin-top: 18px; padding: 17px; border: 1px solid var(--line); border-radius: 12px; background: #fbfcfc; }
+        .case-research-query-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
+        .case-research-query-heading h3 { margin: 0; color: var(--navy); font-size: 16px; }
+        .case-research-query-heading span { color: var(--muted); font-size: 11px; }
+        .case-research-question { width: 100%; min-height: 92px; padding: 10px 12px; resize: vertical; border: 1px solid var(--line); border-radius: 9px; color: var(--ink); background: #fff; font: inherit; font-size: 13px; line-height: 1.65; }
+        .case-research-question:focus, .research-option input:focus-visible { border-color: var(--teal); outline: 3px solid rgba(11,107,98,.12); }
+        .case-research-options { display: grid; grid-template-columns: minmax(150px,.45fr) minmax(220px,1fr); gap: 10px; align-items: end; margin-top: 10px; }
+        .research-option { min-width: 0; color: var(--muted); font-size: 11px; font-weight: 750; }
+        .research-option input[type="date"] { width: 100%; min-height: 34px; margin-top: 4px; padding: 6px 8px; border: 1px solid var(--line); border-radius: 7px; color: var(--ink); background: #fff; font: inherit; font-size: 12px; }
+        .research-cache-option { display: flex; align-items: center; gap: 8px; min-height: 34px; padding: 7px 9px; border: 1px solid var(--line); border-radius: 7px; background: #fff; }
+        .research-cache-option input { width: auto; margin: 0; accent-color: var(--teal); }
+        .research-presets { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+        .research-result-details { margin-top: 16px; border: 1px solid var(--line); border-radius: 11px; background: #fbfcfc; }
+        .research-result-details[hidden] { display: none; }
+        .research-result-details > summary { padding: 12px 15px; color: var(--navy); cursor: pointer; font-size: 13px; font-weight: 800; }
+        .research-result-body { padding: 0 15px 15px; }
+        .research-result-copy { margin: 0 0 10px; padding: 11px 12px; border-radius: 8px; color: #5f707a; background: #f1f5f4; white-space: pre-wrap; font-size: 12px; line-height: 1.7; }
+        .research-decision-draft { max-height: 420px; margin: 10px 0 0; padding: 13px; overflow: auto; border: 1px solid #dfe8e6; border-radius: 8px; color: #405660; background: #fff; white-space: pre-wrap; font: 13px/1.8 ui-serif, Georgia, "Noto Serif TC", serif; }
+        .research-decision-draft[hidden] { display: none; }
+        .research-source-list { margin: 12px 0 0; padding-left: 20px; color: #596c77; font-size: 12px; line-height: 1.7; }
+        .research-source-list button, .research-source-list a { color: var(--teal); }
+        .research-tool-card.is-wide { grid-column: span 2; }
+        .batch-document-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 8px; margin-top: 10px; }
+        .batch-document-field { min-width: 0; padding: 9px; border: 1px solid #e1e9e7; border-radius: 8px; background: #fff; }
+        .batch-document-field label { display: block; margin-bottom: 5px; color: var(--navy); font-size: 11px; font-weight: 750; }
+        .batch-document-input-row { display: flex; align-items: center; gap: 6px; }
+        .batch-document-input { min-width: 0; flex: 1; color: var(--muted); font: inherit; font-size: 10px; }
+        .batch-document-actions { display: flex; align-items: center; gap: 7px; margin-top: 10px; }
+        .session-run-history-list { display: grid; gap: 6px; max-height: 170px; margin: 10px 0; overflow: auto; }
+        .session-run-item { width: 100%; padding: 8px 9px; border: 1px solid var(--line); border-radius: 8px; color: var(--ink); background: #fff; cursor: pointer; text-align: left; font: inherit; }
+        .session-run-item:hover, .session-run-item:focus-visible, .session-run-item.is-active { border-color: var(--teal); background: #eef8f5; outline: none; }
+        .session-run-item strong { display: block; overflow: hidden; font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+        .session-run-item span { display: block; margin-top: 2px; color: var(--muted); font-size: 10px; }
+
+        @media (max-width: 860px) {
+            .workspace-grid,
+            .analysis-grid,
+            .research-tools-grid { grid-template-columns: 1fr; }
+            .research-tool-card.is-wide { grid-column: auto; }
+            .batch-document-grid { grid-template-columns: 1fr; }
+        }
+        @media (max-width: 720px) {
+            .process-rail { width: 64px; padding-top: 22px; }
+            .process-rail-title { margin-bottom: 24px; }
+            .process-steps { gap: 42px; }
+            .process-step { width: 34px; height: 34px; }
+            .process-step-label { display: none; }
+            main { width: 100%; margin: 0; padding: 34px 18px 56px 80px; }
+            .workspace-header { flex-direction: column; gap: 14px; min-height: 0; }
+            .workspace-badge { align-self: flex-start; }
+            .workspace-actions { width: 100%; flex-wrap: wrap; }
+            .panel-heading,
+            .panel-top,
+            .analysis-panel { padding-left: 20px; padding-right: 20px; }
+            .dropzone,
+            .queue-scroll { margin-left: 18px; margin-right: 18px; }
+            .queue-item { grid-template-columns: 36px minmax(0, 1fr); }
+            .queue-support-actions { align-items: stretch; flex-wrap: wrap; }
+            .queue-support-role { max-width: none; flex: 1 1 170px; }
+            .api-settings-grid { grid-template-columns: 1fr; }
+            .research-tool-form { grid-template-columns: 1fr; }
+            .case-research-options { grid-template-columns: 1fr; }
+        }
+    </style>
+</head>
+<body>
+    <aside class="process-rail" aria-label="訴願書判決工作流程">
+        <p class="process-rail-title">流程</p>
+        <nav class="process-steps" aria-label="工作步驟">
+            <a class="process-step" data-step="1" href="/data-library">01<span class="process-step-label">匯入歷史資料</span></a>
+            <a class="process-step active" data-step="2" href="/case-analysis" aria-current="step">02<span class="process-step-label">分析主要爭議點</span></a>
+            <a class="process-step" data-step="3" href="/decision-recommendation">03<span class="process-step-label">生成判決建議</span></a>
+        </nav>
+    </aside>
+
+    <main>
+        <header class="workspace-header">
+            <div class="brand-lockup">
+                <div class="brand-mark" aria-hidden="true">02</div>
+                <div>
+                    <h1>待審訴願書分析</h1>
+                    <p class="workspace-subtitle">批次上傳待審訴願書，準備萃取案件事實、理由與主要爭議點。</p>
+                </div>
+            </div>
+            <div class="workspace-actions">
+                <button class="api-settings-toggle" id="toggleApiSettings" type="button" aria-expanded="false" aria-controls="apiSettingsPanel">⚙ API 設定</button>
+                <a class="workspace-badge" href="/">← 返回工具平台</a>
+            </div>
+        </header>
+
+        <section class="panel api-settings" id="apiSettingsPanel" aria-label="研究 API 設定" hidden>
+            <div class="api-settings-header">
+                <div><h2>研究 API 設定</h2><span class="api-settings-status" id="apiSettingsStatus">尚未設定存取碼</span></div>
+            </div>
+            <div class="api-settings-body" id="apiSettingsBody">
+                <div class="api-settings-grid">
+                    <div class="api-settings-field"><label for="apiBaseUrl">API 網址</label><input id="apiBaseUrl" type="url" autocomplete="off"></div>
+                    <div class="api-settings-field"><label for="apiAccessCode">存取碼</label><input id="apiAccessCode" type="password" autocomplete="off" placeholder="必要時填寫"></div>
+                    <div class="api-settings-field"><label for="apiGeminiKey">Gemini API Key</label><input id="apiGeminiKey" type="password" autocomplete="off" placeholder="可選"></div>
+                    <button class="api-settings-save" id="saveApiSettings" type="button">儲存設定</button>
+                </div>
+                <p class="api-settings-note">設定只會保存於目前瀏覽器；上傳案件與分析請求會送到此 API。</p>
+            </div>
+        </section>
+
+        <section class="workspace-grid" aria-label="待審訴願書分析工作區">
+            <section class="panel upload-panel">
+                <div class="panel-heading">
+                    <div>
+                        <h2>批次上傳待審訴願書</h2>
+                        <p>先上傳訴願書建立案件；原行政處分書與其他卷證可在案件卡片中補充。</p>
+                    </div>
+                </div>
+                <div class="dropzone" id="caseDropZone">
+                    <strong>將待審訴願書放到這裡</strong>
+                    <p>支援多份訴願書 PDF；每份訴願書會建立獨立案件。</p>
+                    <input class="case-file-input" id="caseFileInput" type="file" accept="application/pdf,.pdf" multiple>
+                    <label class="outline-action" for="caseFileInput" tabindex="0">選擇案件檔案</label>
+                    <div class="upload-progress" id="caseUploadProgress" hidden aria-live="polite">
+                        <div class="upload-progress-copy">
+                            <span id="caseUploadProgressLabel">準備上傳檔案</span>
+                            <span class="upload-progress-percent" id="caseUploadProgressPercent">0%</span>
+                        </div>
+                        <div class="upload-progress-track" id="caseUploadProgressTrack" role="progressbar" aria-label="待審訴願書上傳進度" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"></div>
+                    </div>
+                </div>
+            </section>
+
+            <section class="panel queue-panel">
+                <div class="panel-top">
+                    <h2>分析佇列</h2>
+                    <div class="queue-panel-actions">
+                        <button class="queue-selection-button" id="deleteSelectedCases" type="button" disabled>刪除已選案件</button>
+                        <span class="status-chip" id="caseQueueStatus">等待上傳</span>
+                    </div>
+                </div>
+                <div class="queue-scroll" id="caseQueueScroll">
+                    <div class="queue-empty" id="caseQueueEmpty">
+                        <div><strong>目前沒有待審案件</strong>完成上傳後，案件會出現在這裡。</div>
+                    </div>
+                    <div class="queue-list" id="caseQueueList" hidden></div>
+                </div>
+            </section>
+        </section>
+
+        <section class="panel analysis-panel" aria-label="主要爭議點分析結果">
+            <div class="section-heading">
+                <div>
+                    <h2>主要爭議點分析</h2>
+                    <p>從案件事實、理由與主張整理可供比對的爭點。</p>
+                </div>
+                <div>
+                    <span class="status-chip" id="analysisStatus">
+                        尚未選取案件
+                    </span>
+                    <button class="analysis-action" id="runAnalysis" type="button" disabled>
+                        開始分析
+                    </button>
+                </div>
+            </div>
+            <div class="analysis-grid">
+                <article class="analysis-card"><span>目前案件</span><h3 id="analysisCaseName">等待選取案件</h3><p id="analysisCaseMeta">請點擊上方分析佇列中的案件卡片。</p></article>
+                <article class="analysis-card"><span>爭議主張</span><h3 id="analysisClaimTitle">等待案件資料</h3><p id="analysisClaimText">選取案件後，這裡會準備主要爭議點的分析工作。</p></article>
+                <article class="analysis-card"><span>相關法規</span><h3 id="analysisLawTitle">等待案件資料</h3><p id="analysisLawText">選取案件後，這裡會準備法規辨識與歷史案例比對。</p></article>
+            </div>
+            <section class="case-research-query" aria-label="案件研究問題">
+                <div class="case-research-query-heading">
+                    <h3>研究問題</h3>
+                    <span>⌘／Ctrl＋Enter 可開始分析</span>
+                </div>
+                <textarea class="case-research-question" id="researchQuestion" placeholder="輸入要針對本案研究的問題"></textarea>
+                <div class="case-research-options">
+                    <label class="research-option" for="researchAsOf">基準日（選填）<input id="researchAsOf" type="date"></label>
+                    <label class="research-option research-cache-option" for="useLocalResearchCache"><input id="useLocalResearchCache" type="checkbox" checked>使用本地法規快取（最終引用仍由官方來源覆核）</label>
+                </div>
+                <div class="research-presets" aria-label="研究問題範本">
+                    <button class="research-tool-button" type="button" data-research-preset="case">完整案件分析</button>
+                    <button class="research-tool-button" type="button" data-research-preset="evidence">補件後重新分析</button>
+                    <button class="research-tool-button" type="button" data-research-preset="draft">產生可校閱草案</button>
+                </div>
+            </section>
+            <div class="issue-law-map" id="issueLawMap" hidden>
+                <div class="issue-law-map-heading">
+                    <h3>爭議主張與相關法規</h3>
+                    <p>來源按鈕可直接開啟相關法規或案件卷證。</p>
+                </div>
+                <div class="issue-law-toolbar">
+                    <div class="issue-filter-group" role="group" aria-label="爭點篩選">
+                        <button class="issue-filter-button is-active" data-issue-filter="all" data-filter-label="全部" type="button">全部</button>
+                        <button class="issue-filter-button" data-issue-filter="evidence_insufficient" data-filter-label="證據不足" type="button">證據不足</button>
+                        <button class="issue-filter-button" data-issue-filter="supported" data-filter-label="已有支持" type="button">已有支持</button>
+                        <button class="issue-filter-button" data-issue-filter="countered" data-filter-label="存在反向證據" type="button">存在反向證據</button>
+                        <button class="issue-filter-button" data-issue-filter="mixed" data-filter-label="證據不一致" type="button">證據不一致</button>
+                    </div>
+                    <span class="issue-filter-status" id="issueFilterStatus"></span>
+                </div>
+                <div class="issue-law-list" id="issueLawList"></div>
+                <div class="evidence-gap" id="evidenceGap" hidden>
+                    <h4>建議補充資料</h4>
+                    <div class="evidence-gap-list" id="evidenceGapList"></div>
+                </div>
+                <div class="law-inline-preview" id="lawInlinePreview" hidden>
+                    <div class="law-inline-preview-heading">
+                        <div>
+                            <h4 id="lawInlinePreviewTitle">法條內容</h4>
+                            <a id="lawInlinePreviewLink" href="#" target="_blank" rel="noopener noreferrer">開啟官方來源</a>
+                        </div>
+                        <button class="law-inline-preview-close" id="lawInlinePreviewClose" type="button">關閉預覽</button>
+                    </div>
+                    <p class="law-inline-preview-status" id="lawInlinePreviewStatus" aria-live="polite"></p>
+                    <pre class="law-inline-preview-text" id="lawInlinePreviewText"></pre>
+                </div>
+            </div>
+            <details class="research-result-details" id="researchResultDetails" hidden>
+                <summary>查看完整研究結果、法規查核與草案</summary>
+                <div class="research-result-body">
+                    <p class="research-result-copy" id="researchAnswer"></p>
+                    <p class="research-result-copy" id="researchDateResolution" hidden></p>
+                    <p class="research-result-copy" id="researchLegalResolution" hidden></p>
+                    <pre class="research-decision-draft" id="researchDecisionDraft" hidden></pre>
+                    <ol class="research-source-list" id="researchSourceList"></ol>
+                </div>
+            </details>
+        </section>
+
+        <section class="panel research-tools" aria-label="研究 API 延伸功能">
+            <div class="section-heading">
+                <div>
+                    <h2>案件研究工具</h2>
+                    <p>接合研究 API 的案件 Session、研究紀錄、法條沿革與 Agent 稽核功能。</p>
+                </div>
+            </div>
+            <div class="research-tools-grid">
+                <article class="research-tool-card">
+                    <div class="research-tool-heading">
+                        <h3>案件 Session</h3>
+                        <div class="research-tool-actions">
+                            <button class="research-tool-button primary" id="createApiCase" type="button">＋ 新案件</button>
+                            <button class="research-tool-button" id="refreshApiCases" type="button">重新整理</button>
+                        </div>
+                    </div>
+                    <p id="activeApiCaseInfo">案件卡片建立後，這裡會同步目前的 API Session。</p>
+                    <select class="research-tool-field" id="apiCaseSelect" aria-label="選擇案件 Session">
+                        <option value="">尚未載入案件</option>
+                    </select>
+                    <ul class="document-list" id="apiDocumentList" aria-label="目前案件卷證清單"></ul>
+                    <p class="research-tool-status" id="apiCaseStatus" aria-live="polite"></p>
+                </article>
+
+                <article class="research-tool-card is-wide">
+                    <div class="research-tool-heading">
+                        <h3>案件卷證批次補充</h3>
+                        <button class="research-tool-button primary" id="uploadBatchDocuments" type="button">上傳所選卷證</button>
+                    </div>
+                    <p>可在同一個 Session 一次選擇多類、多份卷證；每一類都能清除後重新選取。</p>
+                    <div class="batch-document-grid">
+                        <div class="batch-document-field"><label for="batchAppealPetition">訴願書（主文件・訴願人方）</label><div class="batch-document-input-row"><input class="batch-document-input" id="batchAppealPetition" data-document-role="appeal_petition" type="file" multiple accept=".pdf,.doc,.docx,.rtf,.odt,.txt,.md,.csv,.json"><button class="research-tool-button" type="button" data-clear-document-input="batchAppealPetition">清除</button></div></div>
+                        <div class="batch-document-field"><label for="batchAppellantEvidence">訴願人補充證據（訴願人方）</label><div class="batch-document-input-row"><input class="batch-document-input" id="batchAppellantEvidence" data-document-role="appellant_evidence" type="file" multiple accept=".pdf,.doc,.docx,.rtf,.odt,.txt,.md,.csv,.json"><button class="research-tool-button" type="button" data-clear-document-input="batchAppellantEvidence">清除</button></div></div>
+                        <div class="batch-document-field"><label for="batchDisposition">原行政處分書（附件一・原處分機關方）</label><div class="batch-document-input-row"><input class="batch-document-input" id="batchDisposition" data-document-role="administrative_disposition" type="file" multiple accept=".pdf,.doc,.docx,.rtf,.odt,.txt,.md,.csv,.json"><button class="research-tool-button" type="button" data-clear-document-input="batchDisposition">清除</button></div></div>
+                        <div class="batch-document-field"><label for="batchDispositionEvidence">原處分機關卷內證據（原處分機關方）</label><div class="batch-document-input-row"><input class="batch-document-input" id="batchDispositionEvidence" data-document-role="disposition_evidence" type="file" multiple accept=".pdf,.doc,.docx,.rtf,.odt,.txt,.md,.csv,.json"><button class="research-tool-button" type="button" data-clear-document-input="batchDispositionEvidence">清除</button></div></div>
+                        <div class="batch-document-field"><label for="batchOtherNote">其他附註文件（未標明立場）</label><div class="batch-document-input-row"><input class="batch-document-input" id="batchOtherNote" data-document-role="other_note" type="file" multiple accept=".pdf,.doc,.docx,.rtf,.odt,.txt,.md,.csv,.json"><button class="research-tool-button" type="button" data-clear-document-input="batchOtherNote">清除</button></div></div>
+                    </div>
+                    <p class="research-tool-status" id="batchDocumentStatus" aria-live="polite"></p>
+                </article>
+
+                <article class="research-tool-card">
+                    <h3>法條沿革</h3>
+                    <p>輸入朋友 API 使用的法規代碼與條號，查詢官方歷史版本。</p>
+                    <form class="research-tool-form" id="articleHistoryForm">
+                        <div class="research-tool-form-field"><label for="historyLawId">法規代碼</label><input class="research-tool-field" id="historyLawId" placeholder="B0080001" autocomplete="off"></div>
+                        <div class="research-tool-form-field"><label for="historyArticleNo">條號</label><input class="research-tool-field" id="historyArticleNo" placeholder="44" autocomplete="off"></div>
+                        <button class="research-tool-button primary" type="submit">查詢</button>
+                    </form>
+                    <p class="research-tool-status" id="articleHistoryStatus" aria-live="polite"></p>
+                    <div class="history-result" id="articleHistoryResult" hidden>
+                        <h4 id="articleHistoryTitle"></h4>
+                        <a id="articleHistoryLink" href="#" target="_blank" rel="noopener noreferrer">開啟官方來源</a>
+                        <div class="history-snapshots" id="articleHistorySnapshots"></div>
+                    </div>
+                </article>
+
+                <article class="research-tool-card">
+                    <div class="research-tool-heading">
+                        <h3>本 Session 歷次研究與稽核</h3>
+                        <button class="research-tool-button" id="refreshResearchRuns" type="button">重新整理</button>
+                    </div>
+                    <p>點選紀錄可還原當時的完整結果，再補充卷證或繼續提問。</p>
+                    <div class="session-run-history-list" id="sessionRunHistoryList"></div>
+                    <select class="research-tool-field" id="researchRunSelect" aria-label="選擇研究紀錄">
+                        <option value="">尚無研究紀錄</option>
+                    </select>
+                    <p class="research-tool-status" id="researchRunStatus" aria-live="polite"></p>
+                    <div class="audit-result" id="researchAuditResult" hidden>
+                        <div class="audit-list" id="researchAuditList"></div>
+                    </div>
+                </article>
+            </div>
+        </section>
+    </main>
+
+    <script src="/assets/temporal_law_api.js"></script>
+    <script>
+        (() => {
+            const fileInput = document.getElementById('caseFileInput');
+            const dropZone = document.getElementById('caseDropZone');
+            const progress = document.getElementById('caseUploadProgress');
+            const progressLabel = document.getElementById('caseUploadProgressLabel');
+            const progressPercent = document.getElementById('caseUploadProgressPercent');
+            const progressTrack = document.getElementById('caseUploadProgressTrack');
+            const queueStatus = document.getElementById('caseQueueStatus');
+            const queueEmpty = document.getElementById('caseQueueEmpty');
+            const queueList = document.getElementById('caseQueueList');
+            const queueScroll = document.getElementById('caseQueueScroll');
+            const deleteSelectedCasesButton = document.getElementById('deleteSelectedCases');
+            const queueStorageKey = 'case-analysis-queue';
+            const activeCaseStorageKey = 'case-analysis-active-id';
+            const analysisStatus = document.getElementById('analysisStatus');
+            const analysisCaseName = document.getElementById('analysisCaseName');
+            const analysisCaseMeta = document.getElementById('analysisCaseMeta');
+            const analysisClaimTitle = document.getElementById('analysisClaimTitle');
+            const analysisClaimText = document.getElementById('analysisClaimText');
+            const analysisLawTitle = document.getElementById('analysisLawTitle');
+            const analysisLawText = document.getElementById('analysisLawText');
+            const issueLawMap = document.getElementById('issueLawMap');
+            const issueLawList = document.getElementById('issueLawList');
+            const issueFilterStatus = document.getElementById('issueFilterStatus');
+            const issueFilterButtons = [...document.querySelectorAll('[data-issue-filter]')];
+            const evidenceGap = document.getElementById('evidenceGap');
+            const evidenceGapList = document.getElementById('evidenceGapList');
+            const lawInlinePreview = document.getElementById('lawInlinePreview');
+            const lawInlinePreviewTitle = document.getElementById('lawInlinePreviewTitle');
+            const lawInlinePreviewLink = document.getElementById('lawInlinePreviewLink');
+            const lawInlinePreviewStatus = document.getElementById('lawInlinePreviewStatus');
+            const lawInlinePreviewText = document.getElementById('lawInlinePreviewText');
+            const lawInlinePreviewClose = document.getElementById('lawInlinePreviewClose');
+            const runAnalysisButton = document.getElementById('runAnalysis');
+            const researchQuestion = document.getElementById('researchQuestion');
+            const researchAsOf = document.getElementById('researchAsOf');
+            const useLocalResearchCache = document.getElementById('useLocalResearchCache');
+            const researchResultDetails = document.getElementById('researchResultDetails');
+            const researchAnswer = document.getElementById('researchAnswer');
+            const researchDateResolution = document.getElementById('researchDateResolution');
+            const researchLegalResolution = document.getElementById('researchLegalResolution');
+            const researchDecisionDraft = document.getElementById('researchDecisionDraft');
+            const researchSourceList = document.getElementById('researchSourceList');
+            const apiBaseUrlInput = document.getElementById('apiBaseUrl');
+            const apiAccessCodeInput = document.getElementById('apiAccessCode');
+            const apiGeminiKeyInput = document.getElementById('apiGeminiKey');
+            const saveApiSettingsButton = document.getElementById('saveApiSettings');
+            const apiSettingsStatus = document.getElementById('apiSettingsStatus');
+            const toggleApiSettingsButton = document.getElementById('toggleApiSettings');
+            const apiSettingsPanel = document.getElementById('apiSettingsPanel');
+            const createApiCaseButton = document.getElementById('createApiCase');
+            const refreshApiCasesButton = document.getElementById('refreshApiCases');
+            const activeApiCaseInfo = document.getElementById('activeApiCaseInfo');
+            const apiCaseSelect = document.getElementById('apiCaseSelect');
+            const apiDocumentList = document.getElementById('apiDocumentList');
+            const apiCaseStatus = document.getElementById('apiCaseStatus');
+            const uploadBatchDocumentsButton = document.getElementById('uploadBatchDocuments');
+            const batchDocumentStatus = document.getElementById('batchDocumentStatus');
+            const batchDocumentInputs = [...document.querySelectorAll('[data-document-role]')];
+            const articleHistoryForm = document.getElementById('articleHistoryForm');
+            const historyLawIdInput = document.getElementById('historyLawId');
+            const historyArticleNoInput = document.getElementById('historyArticleNo');
+            const articleHistoryStatus = document.getElementById('articleHistoryStatus');
+            const articleHistoryResult = document.getElementById('articleHistoryResult');
+            const articleHistoryTitle = document.getElementById('articleHistoryTitle');
+            const articleHistoryLink = document.getElementById('articleHistoryLink');
+            const articleHistorySnapshots = document.getElementById('articleHistorySnapshots');
+            const refreshResearchRunsButton = document.getElementById('refreshResearchRuns');
+            const researchRunSelect = document.getElementById('researchRunSelect');
+            const researchRunStatus = document.getElementById('researchRunStatus');
+            const researchAuditResult = document.getElementById('researchAuditResult');
+            const researchAuditList = document.getElementById('researchAuditList');
+            const sessionRunHistoryList = document.getElementById('sessionRunHistoryList');
+            const apiClient = window.temporalLawApi;
+            const defaultResearchQuestion = '請依卷內資料分析本案全部主要爭議點，整理訴願人主張、原處分機關立場、相關法規、支持證據、反向證據與證據不足之處。';
+            const researchPresets = {
+                case: defaultResearchQuestion,
+                evidence: '請依本案目前全部卷證重新分析各爭點，逐項比較訴願人與原處分機關的證據，標示已有支持、反向證據、證據不一致與證據不足，並列出仍需補充的文件。',
+                draft: '請依本案卷證、主要爭議點與經官方覆核的相關法規，生成一份可供承辦人校閱的訴願決定書草案，保留引用依據；資料不足處請明確標示待人工確認。'
+            };
+            const supportRoles = [
+                { value: 'appeal_petition', label: '訴願書（主文件・訴願人方）' },
+                { value: 'appellant_evidence', label: '訴願人補充證據（訴願人方）' },
+                { value: 'administrative_disposition', label: '原行政處分書（附件一・原處分機關方）' },
+                { value: 'disposition_evidence', label: '原處分機關卷內證據（原處分機關方）' },
+                { value: 'other_note', label: '其他附註文件（未標明立場）' }
+            ];
+            let progressTimer = null;
+            let queueSequence = 0;
+            let queuedFiles = [];
+            const selectedCaseIds = new Set();
+            const persistentStorage = window.localStorage;
+            const legacyStorage = window.sessionStorage;
+            const readStoredValue = key => {
+                const currentValue = persistentStorage.getItem(key);
+                if (currentValue !== null) return currentValue;
+                const legacyValue = legacyStorage.getItem(key);
+                if (legacyValue !== null) {
+                    persistentStorage.setItem(key, legacyValue);
+                    return legacyValue;
+                }
+                return null;
+            };
+            const initialCaseId = new URLSearchParams(window.location.search).get('case_id') || '';
+            let activeCaseId = /^[0-9a-f-]{36}$/i.test(initialCaseId)
+                ? initialCaseId
+                : (readStoredValue(activeCaseStorageKey) || '');
+            let apiCasesCache = [];
+            let serverResearchConfig = {};
+            researchQuestion.value = defaultResearchQuestion;
+
+            const loadApiSettings = () => {
+                const settings = apiClient.getSettings();
+                const serverAccessConfigured = Boolean(serverResearchConfig.access_code_configured);
+                apiBaseUrlInput.value = serverResearchConfig.api_base_url || settings.apiBaseUrl;
+                apiBaseUrlInput.disabled = serverResearchConfig.allow_custom_api_url === false;
+                apiAccessCodeInput.value = settings.accessCode;
+                apiAccessCodeInput.placeholder = serverAccessConfigured ? '伺服器已安全設定，可留空' : '必要時填寫';
+                apiGeminiKeyInput.value = settings.geminiApiKey;
+                apiGeminiKeyInput.placeholder = serverResearchConfig.gemini_api_key_configured
+                    ? '伺服器已安全設定，可留空'
+                    : '必要時填寫';
+                const ready = serverAccessConfigured || Boolean(settings.accessCode);
+                apiSettingsStatus.textContent = serverAccessConfigured
+                    ? 'AWS 伺服器已安全設定 API 存取資訊'
+                    : (settings.accessCode ? '已載入瀏覽器 API 設定' : '請輸入 API 存取碼');
+                apiSettingsStatus.className = `api-settings-status${ready ? ' is-success' : ' is-warning'}`;
+            };
+
+            const hasResearchAccess = () => Boolean(
+                serverResearchConfig.access_code_configured || apiClient.getSettings().accessCode
+            );
+
+            const loadServerResearchConfig = async () => {
+                try {
+                    serverResearchConfig = await apiClient.getServerConfig();
+                } catch (_error) {
+                    serverResearchConfig = {};
+                }
+                loadApiSettings();
+            };
+
+            saveApiSettingsButton.addEventListener('click', () => {
+                if (!apiAccessCodeInput.value.trim() && !serverResearchConfig.access_code_configured) {
+                    apiSettingsStatus.textContent = '請先輸入 API 存取碼';
+                    apiSettingsStatus.className = 'api-settings-status is-warning';
+                    apiAccessCodeInput.focus();
+                    return;
+                }
+                const settings = apiClient.saveSettings({
+                    apiBaseUrl: apiBaseUrlInput.value,
+                    accessCode: apiAccessCodeInput.value,
+                    geminiApiKey: apiGeminiKeyInput.value
+                });
+                apiBaseUrlInput.value = settings.apiBaseUrl;
+                apiSettingsStatus.textContent = '設定已儲存';
+                apiSettingsStatus.className = 'api-settings-status is-success';
+                loadApiCases();
+            });
+            toggleApiSettingsButton.addEventListener('click', () => {
+                const isOpen = !apiSettingsPanel.hidden;
+                apiSettingsPanel.hidden = isOpen;
+                toggleApiSettingsButton.setAttribute('aria-expanded', String(!isOpen));
+            });
+            loadApiSettings();
+            loadServerResearchConfig();
+
+            const setToolStatus = (element, message, state = '') => {
+                element.textContent = message || '';
+                element.className = `research-tool-status${state ? ` is-${state}` : ''}`;
+            };
+
+            const getActiveQueueFile = () => queuedFiles.find(
+                file => file.id === activeCaseId || file.caseId === activeCaseId
+            );
+
+            const rememberActiveCase = caseId => {
+                if (!/^[0-9a-f-]{36}$/i.test(caseId || '')) return;
+                activeCaseId = caseId;
+                persistentStorage.setItem(activeCaseStorageKey, caseId);
+                const url = new URL(window.location.href);
+                url.searchParams.set('case_id', caseId);
+                window.history.replaceState(null, '', url);
+            };
+
+            const ensureQueueFileForApiCase = (caseId, title = '') => {
+                let queueFile = queuedFiles.find(file => file.caseId === caseId);
+                if (queueFile) return queueFile;
+                queueFile = {
+                    id: `api-${caseId}`,
+                    name: title || '未命名訴願案件',
+                    size: 0,
+                    status: '已從研究 API 載入',
+                    pdfUrl: '',
+                    caseId,
+                    documents: [],
+                    analysisResult: null,
+                    error: false
+                };
+                queuedFiles = [queueFile, ...queuedFiles];
+                saveQueue();
+                return queueFile;
+            };
+
+            const getActiveApiCaseId = () => {
+                const queueFile = getActiveQueueFile();
+                return queueFile?.caseId || (/^[0-9a-f-]{36}$/i.test(activeCaseId) ? activeCaseId : '');
+            };
+
+            document.querySelectorAll('[data-research-preset]').forEach(button => {
+                button.addEventListener('click', () => {
+                    researchQuestion.value = researchPresets[button.dataset.researchPreset] || defaultResearchQuestion;
+                    researchQuestion.focus();
+                });
+            });
+            researchQuestion.addEventListener('keydown', event => {
+                if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
+                    event.preventDefault();
+                    runAnalysisButton.click();
+                }
+            });
+
+            const resolveSourceUrl = url => {
+                const value = String(url || '');
+                return value.startsWith('/v1/') ? `/api/research${value.slice(3)}` : value;
+            };
+
+            const getCaseDocumentId = documentInfo => {
+                const directId = documentInfo?.document_id || documentInfo?.id || documentInfo?.file_id;
+                if (directId) return String(directId);
+                const urls = [documentInfo?.url, documentInfo?.document_url, documentInfo?.download_url]
+                    .filter(Boolean)
+                    .map(value => String(value));
+                for (const url of urls) {
+                    const pathMatch = url.match(/case-documents(?:\/|%2f)([^/?#%]+)/i);
+                    if (pathMatch?.[1]) return decodeURIComponent(pathMatch[1]);
+                    const queryMatch = url.match(/[?&](?:document_id|file_id|id)=([^&#]+)/i);
+                    if (queryMatch?.[1]) return decodeURIComponent(queryMatch[1]);
+                }
+                return '';
+            };
+
+            const openApiDocument = async documentInfo => {
+                const documentId = getCaseDocumentId(documentInfo);
+                if (!documentId) {
+                    setToolStatus(apiCaseStatus, '這份卷證沒有可用的 document_id。', 'error');
+                    return;
+                }
+                const popup = window.open('', '_blank');
+                try {
+                    const file = await apiClient.getCaseDocument(documentId);
+                    const objectUrl = URL.createObjectURL(file.blob);
+                    if (popup) popup.location.href = objectUrl;
+                    else window.open(objectUrl, '_blank', 'noopener');
+                    window.setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000);
+                } catch (error) {
+                    if (popup) popup.close();
+                    setToolStatus(apiCaseStatus, `卷證開啟失敗：${error.message}`, 'error');
+                }
+            };
+
+            const renderApiDocuments = documents => {
+                apiDocumentList.replaceChildren();
+                const items = Array.isArray(documents) ? documents : [];
+                if (!items.length) return;
+                items.forEach(documentInfo => {
+                    const item = document.createElement('li');
+                    const role = documentInfo.role_label || documentInfo.role || '案件卷證';
+                    const party = documentInfo.party_label ? `（${documentInfo.party_label}）` : '';
+                    const name = documentInfo.original_name || documentInfo.filename || '未命名文件';
+                    const state = documentInfo.extraction_status === 'extracted'
+                        ? '已擷取文字'
+                        : documentInfo.extraction_status === 'needs_ocr'
+                            ? '需要 OCR 才能作為文字證據'
+                            : (documentInfo.extraction_status || '已加入案件');
+                    const label = document.createElement('span');
+                    label.textContent = `${role}${party}：${name}`;
+                    const stateLabel = document.createElement('span');
+                    stateLabel.className = 'type';
+                    stateLabel.textContent = state;
+                    item.append(label, stateLabel);
+                    const documentId = getCaseDocumentId(documentInfo);
+                    if (documentId) {
+                        const readButton = document.createElement('button');
+                        readButton.type = 'button';
+                        readButton.className = 'research-tool-button';
+                        readButton.textContent = '閱讀';
+                        readButton.addEventListener('click', () => openApiDocument(documentInfo));
+                        item.append(readButton);
+                    }
+                    apiDocumentList.append(item);
+                });
+            };
+
+            const loadApiCaseDocuments = async caseId => {
+                if (!caseId) {
+                    renderApiDocuments([]);
+                    return;
+                }
+                try {
+                    const data = await apiClient.listCaseDocuments(caseId);
+                    const queueFile = ensureQueueFileForApiCase(caseId);
+                    if (queueFile) {
+                        queueFile.documents = data.documents || [];
+                        const petition = (data.documents || []).find(documentInfo => documentInfo.role === 'appeal_petition');
+                        if (petition && queueFile.name === '未命名訴願案件') {
+                            queueFile.name = petition.original_name || petition.filename || queueFile.name;
+                        }
+                        saveQueue();
+                        renderQueue();
+                        renderAnalysis(queueFile);
+                    }
+                    renderApiDocuments(data.documents || []);
+                    setToolStatus(apiCaseStatus, `本案件共有 ${(data.documents || []).length} 份卷證。`, 'success');
+                } catch (error) {
+                    renderApiDocuments([]);
+                    setToolStatus(apiCaseStatus, `卷證清單讀取失敗：${error.message}`, 'error');
+                }
+            };
+
+            const renderApiCases = cases => {
+                const items = Array.isArray(cases) ? cases : [];
+                apiCasesCache = items;
+                const activeId = getActiveApiCaseId();
+                apiCaseSelect.replaceChildren();
+                if (!items.length) {
+                    const option = document.createElement('option');
+                    option.value = '';
+                    option.textContent = '尚無案件 Session';
+                    apiCaseSelect.append(option);
+                    activeApiCaseInfo.textContent = '尚無案件；上傳訴願書或按「＋ 新案件」建立。';
+                    renderApiDocuments([]);
+                    return;
+                }
+                items.forEach(item => {
+                    const option = document.createElement('option');
+                    option.value = item.case_id || '';
+                    option.textContent = `${item.title || '未命名訴願案件'}・${item.document_count || 0} 份卷證・${item.run_count || 0} 次研究`;
+                    option.disabled = !item.case_id;
+                    apiCaseSelect.append(option);
+                });
+                const selectedId = items.some(item => item.case_id === activeId) ? activeId : items[0].case_id;
+                apiCaseSelect.value = selectedId || '';
+                activeApiCaseInfo.textContent = selectedId
+                    ? `目前 API Session：${selectedId}`
+                    : '請選擇一個案件 Session。';
+                if (selectedId) {
+                    const selectedCase = items.find(item => item.case_id === selectedId);
+                    rememberActiveCase(selectedId);
+                    const queueFile = ensureQueueFileForApiCase(selectedId, selectedCase?.title);
+                    renderQueue();
+                    renderAnalysis(queueFile);
+                    loadApiCaseDocuments(selectedId);
+                    loadResearchRuns(selectedId);
+                }
+            };
+
+            const loadApiCases = async () => {
+                try {
+                    const data = await apiClient.listCases();
+                    renderApiCases(data.cases || []);
+                    if (data.cases?.length) setToolStatus(apiCaseStatus, '案件 Session 已同步。', 'success');
+                } catch (error) {
+                    setToolStatus(apiCaseStatus, `案件 Session 讀取失敗：${error.message}`, 'error');
+                }
+            };
+
+            const selectApiCase = async caseId => {
+                if (!caseId) return;
+                rememberActiveCase(caseId);
+                const selectedCase = apiCasesCache.find(item => item.case_id === caseId);
+                const queueFile = ensureQueueFileForApiCase(caseId, selectedCase?.title);
+                activeApiCaseInfo.textContent = `目前 API Session：${caseId}`;
+                renderQueue();
+                renderAnalysis(queueFile);
+                await Promise.all([loadApiCaseDocuments(caseId), loadResearchRuns(caseId)]);
+            };
+
+            const createApiCase = async () => {
+                createApiCaseButton.disabled = true;
+                setToolStatus(apiCaseStatus, '正在建立新的案件 Session…');
+                try {
+                    const data = await apiClient.createCase();
+                    if (!data.case_id) throw new Error('API 沒有回傳 case_id。');
+                    rememberActiveCase(data.case_id);
+                    ensureQueueFileForApiCase(data.case_id, '新案件 Session');
+                    activeApiCaseInfo.textContent = `目前 API Session：${activeCaseId}`;
+                    await loadApiCases();
+                    setToolStatus(apiCaseStatus, '新的案件 Session 已建立。', 'success');
+                } catch (error) {
+                    setToolStatus(apiCaseStatus, `建立案件失敗：${error.message}`, 'error');
+                } finally {
+                    createApiCaseButton.disabled = false;
+                }
+            };
+
+            document.querySelectorAll('[data-clear-document-input]').forEach(button => {
+                button.addEventListener('click', () => {
+                    const input = document.getElementById(button.dataset.clearDocumentInput);
+                    if (input) input.value = '';
+                });
+            });
+
+            const uploadBatchDocuments = async () => {
+                const selected = batchDocumentInputs.flatMap(input =>
+                    [...(input.files || [])].map(file => ({ file, role: input.dataset.documentRole }))
+                );
+                if (!selected.length) {
+                    setToolStatus(batchDocumentStatus, '請先選擇至少一份卷證。', 'error');
+                    return;
+                }
+                if (!hasResearchAccess()) {
+                    setToolStatus(batchDocumentStatus, '請先在 API 設定輸入存取碼。', 'error');
+                    apiSettingsPanel.hidden = false;
+                    apiAccessCodeInput.focus();
+                    return;
+                }
+                uploadBatchDocumentsButton.disabled = true;
+                let caseId = getActiveApiCaseId();
+                let uploadedCount = 0;
+                try {
+                    for (const item of selected) {
+                        setToolStatus(batchDocumentStatus, `正在上傳第 ${uploadedCount + 1}／${selected.length} 份：${item.file.name}`);
+                        const data = await apiClient.uploadDocument({ file: item.file, role: item.role, caseId });
+                        caseId = data.case_id || caseId;
+                        if (!caseId) throw new Error('API 沒有回傳 case_id。');
+                        rememberActiveCase(caseId);
+                        const queueFile = ensureQueueFileForApiCase(caseId);
+                        if (data.document) queueFile.documents = [...(queueFile.documents || []), data.document];
+                        if (item.role === 'appeal_petition' && queueFile.name === '未命名訴願案件') {
+                            queueFile.name = item.file.name;
+                        }
+                        uploadedCount += 1;
+                    }
+                    batchDocumentInputs.forEach(input => { input.value = ''; });
+                    if (!researchQuestion.value.trim()) researchQuestion.value = defaultResearchQuestion;
+                    saveQueue();
+                    renderQueue();
+                    renderAnalysis(ensureQueueFileForApiCase(caseId));
+                    await Promise.all([loadApiCaseDocuments(caseId), loadResearchRuns(caseId), loadApiCases()]);
+                    setToolStatus(batchDocumentStatus, `已加入 ${uploadedCount} 份卷證。`, 'success');
+                } catch (error) {
+                    setToolStatus(batchDocumentStatus, `卷證上傳失敗：${error.message}`, 'error');
+                } finally {
+                    uploadBatchDocumentsButton.disabled = false;
+                }
+            };
+            uploadBatchDocumentsButton.addEventListener('click', uploadBatchDocuments);
+
+            const renderAudit = run => {
+                researchAuditList.replaceChildren();
+                const narrative = run?.summary?.narrative;
+                if (narrative) {
+                    const overview = document.createElement('p');
+                    overview.className = 'research-result-copy';
+                    overview.textContent = narrative;
+                    researchAuditList.append(overview);
+                }
+                const steps = Array.isArray(run?.steps) ? run.steps : [];
+                if (!steps.length) {
+                    const empty = document.createElement('p');
+                    empty.className = 'research-result-copy';
+                    empty.textContent = '這次研究尚未產生工具紀錄。';
+                    researchAuditList.append(empty);
+                    researchAuditResult.hidden = false;
+                    return;
+                }
+                steps.forEach(step => {
+                    const details = document.createElement('details');
+                    const summary = document.createElement('summary');
+                    summary.textContent = `${step.step_no || ''}. ${step.tool_name || '研究步驟'}・${step.decision || ''}`;
+                    const pre = document.createElement('pre');
+                    pre.textContent = JSON.stringify({ input: step.input, result: step.result }, null, 2);
+                    details.append(summary, pre);
+                    researchAuditList.append(details);
+                });
+                researchAuditResult.hidden = false;
+            };
+
+            const loadResearchRun = async runId => {
+                if (!runId) return;
+                setToolStatus(researchRunStatus, '正在還原這次研究結果…');
+                try {
+                    const data = await apiClient.getAgentRun(runId);
+                    renderAudit(data);
+                    const caseId = data.case_id || getActiveApiCaseId();
+                    const queueFile = caseId ? ensureQueueFileForApiCase(caseId) : getActiveQueueFile();
+                    if (data.result && queueFile) {
+                        queueFile.analysisResult = data.result;
+                        if (data.question) researchQuestion.value = data.question;
+                        researchAsOf.value = data.result.as_of || data.as_of || '';
+                        saveQueue();
+                        renderAnalysis(queueFile);
+                    }
+                    researchRunSelect.value = runId;
+                    sessionRunHistoryList.querySelectorAll('.session-run-item').forEach(item => {
+                        item.classList.toggle('is-active', item.dataset.runId === runId);
+                    });
+                    setToolStatus(
+                        researchRunStatus,
+                        data.result ? '歷史研究結果與稽核紀錄已還原，可繼續補件或提問。' : '此紀錄只有稽核步驟，沒有保存完整結果。',
+                        data.result ? 'success' : ''
+                    );
+                } catch (error) {
+                    researchAuditResult.hidden = true;
+                    setToolStatus(researchRunStatus, `稽核紀錄讀取失敗：${error.message}`, 'error');
+                }
+            };
+
+            const loadResearchRuns = async caseId => {
+                researchRunSelect.replaceChildren();
+                sessionRunHistoryList.replaceChildren();
+                researchAuditResult.hidden = true;
+                if (!caseId) {
+                    const option = document.createElement('option');
+                    option.value = '';
+                    option.textContent = '尚無研究紀錄';
+                    researchRunSelect.append(option);
+                    sessionRunHistoryList.textContent = '尚未選擇案件 Session。';
+                    return;
+                }
+                try {
+                    const data = await apiClient.listCaseRuns(caseId);
+                    const runs = Array.isArray(data.runs) ? data.runs : [];
+                    if (!runs.length) {
+                        const option = document.createElement('option');
+                        option.value = '';
+                        option.textContent = '尚無研究紀錄';
+                        researchRunSelect.append(option);
+                        sessionRunHistoryList.textContent = '此 Session 尚無研究紀錄。';
+                        setToolStatus(researchRunStatus, '此案件尚無研究紀錄。');
+                        return;
+                    }
+                    const runStatusLabel = status => ({
+                        completed: '完成',
+                        running: '進行中',
+                        failed: '失敗',
+                        error: '失敗'
+                    })[String(status || '').toLowerCase()] || status || '完成';
+                    runs.forEach(run => {
+                        const option = document.createElement('option');
+                        option.value = run.run_id || '';
+                        option.textContent = `${runStatusLabel(run.status)}・${String(run.started_at || '').replace('T', ' ').slice(0, 16)}・${String(run.question || '').slice(0, 28)}`;
+                        researchRunSelect.append(option);
+
+                        const historyButton = document.createElement('button');
+                        historyButton.type = 'button';
+                        historyButton.className = 'session-run-item';
+                        historyButton.dataset.runId = run.run_id || '';
+                        const question = document.createElement('strong');
+                        question.textContent = String(run.question || '未命名研究').slice(0, 60);
+                        const meta = document.createElement('span');
+                        meta.textContent = `${runStatusLabel(run.status)}・${String(run.started_at || '').replace('T', ' ').slice(0, 16)}`;
+                        historyButton.append(question, meta);
+                        historyButton.disabled = !run.run_id;
+                        historyButton.addEventListener('click', () => loadResearchRun(run.run_id));
+                        sessionRunHistoryList.append(historyButton);
+                    });
+                    setToolStatus(researchRunStatus, `已載入 ${runs.length} 筆研究紀錄。`, 'success');
+                    if (runs[0]?.run_id) await loadResearchRun(runs[0].run_id);
+                } catch (error) {
+                    const option = document.createElement('option');
+                    option.value = '';
+                    option.textContent = '無法載入研究紀錄';
+                    researchRunSelect.append(option);
+                    sessionRunHistoryList.textContent = '無法載入本 Session 的研究紀錄。';
+                    setToolStatus(researchRunStatus, `研究紀錄讀取失敗：${error.message}`, 'error');
+                }
+            };
+
+            const loadArticleHistory = async event => {
+                event?.preventDefault();
+                const lawId = historyLawIdInput.value.trim().toUpperCase();
+                const articleNo = historyArticleNoInput.value.trim().replace(/\s+/g, '');
+                if (!/^[A-Z]\d{7}$/.test(lawId) || !/^\d+(?:之\d+)?$/.test(articleNo)) {
+                    setToolStatus(articleHistoryStatus, '請輸入正確格式，例如法規代碼 B0080001、條號 44。', 'error');
+                    return;
+                }
+                setToolStatus(articleHistoryStatus, '正在讀取官方法條沿革…');
+                articleHistoryResult.hidden = true;
+                try {
+                    const data = await apiClient.getArticleHistory(lawId, articleNo);
+                    articleHistoryTitle.textContent = `${data.law_name || lawId} 第${data.article_no || articleNo}條`;
+                    articleHistoryLink.href = data.source_url || '#';
+                    articleHistorySnapshots.replaceChildren();
+                    (data.snapshots || []).forEach(snapshot => {
+                        const card = document.createElement('article');
+                        card.className = 'history-snapshot';
+                        const title = document.createElement('strong');
+                        title.textContent = snapshot.snapshot_label || snapshot.revision_date || '歷史版本';
+                        const date = document.createElement('div');
+                        date.className = 'type';
+                        date.textContent = `修正日期：${snapshot.revision_date || '未提供'}`;
+                        const text = document.createElement('pre');
+                        text.textContent = snapshot.article_text || '';
+                        card.append(title, date, text);
+                        articleHistorySnapshots.append(card);
+                    });
+                    articleHistoryResult.hidden = false;
+                    setToolStatus(articleHistoryStatus, '沿革讀取完成。', 'success');
+                } catch (error) {
+                    setToolStatus(articleHistoryStatus, `沿革讀取失敗：${error.message}`, 'error');
+                }
+            };
+
+            createApiCaseButton.addEventListener('click', createApiCase);
+            refreshApiCasesButton.addEventListener('click', loadApiCases);
+            apiCaseSelect.addEventListener('change', event => selectApiCase(event.target.value));
+            refreshResearchRunsButton.addEventListener('click', () => loadResearchRuns(getActiveApiCaseId()));
+            researchRunSelect.addEventListener('change', event => loadResearchRun(event.target.value));
+            articleHistoryForm.addEventListener('submit', loadArticleHistory);
+            apiCaseSelect.addEventListener('click', event => event.stopPropagation());
+
+            const formatBytes = bytes => {
+                if (!bytes) return '0 Bytes';
+                const units = ['Bytes', 'KB', 'MB', 'GB'];
+                const index = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1);
+                return `${Number((bytes / (1024 ** index)).toFixed(2))} ${units[index]}`;
+            };
+
+            const setQueueStatus = (label, state = '') => {
+                queueStatus.textContent = label;
+                queueStatus.className = `status-chip${state ? ` is-${state}` : ''}`;
+            };
+
+            const updateSelectionControls = () => {
+                const validIds = new Set(queuedFiles.map(file => file.id));
+                [...selectedCaseIds].forEach(id => {
+                    if (!validIds.has(id)) selectedCaseIds.delete(id);
+                });
+                const selectedCount = selectedCaseIds.size;
+                deleteSelectedCasesButton.disabled = selectedCount === 0;
+                deleteSelectedCasesButton.textContent = selectedCount ? `刪除已選案件（${selectedCount}）` : '刪除已選案件';
+            };
+
+            const restoreQueue = () => {
+                try {
+                    const savedQueue = JSON.parse(readStoredValue(queueStorageKey) || '[]');
+                    return Array.isArray(savedQueue) ? savedQueue : [];
+                } catch (_error) {
+                    return [];
+                }
+            };
+
+            const saveQueue = () => {
+                const completedFiles = queuedFiles.filter(file => file.pdfUrl || file.caseId);
+                persistentStorage.setItem(queueStorageKey, JSON.stringify(completedFiles));
+            };
+
+            const openCaseNotes = file => {
+                if (!file.pdfUrl) return;
+                saveQueue();
+                const query = new URLSearchParams({ file: file.pdfUrl, name: file.name });
+                window.location.href = `/case-notes?${query.toString()}`;
+            };
+
+            const loadInlineArticleHistory = async source => {
+                const lawId = String(source.fname || '').trim().toUpperCase();
+                const articleNo = String(source.article_no || '').trim().replace(/\s+/g, '');
+                if (!lawId || !articleNo) return;
+                lawInlinePreview.hidden = false;
+                lawInlinePreviewTitle.textContent = `${source.law_name || source.name || lawId} 第${articleNo}條`;
+                lawInlinePreviewLink.href = resolveSourceUrl(source.url);
+                lawInlinePreviewStatus.textContent = '正在讀取官方條文…';
+                lawInlinePreviewText.textContent = '';
+                lawInlinePreview.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                try {
+                    const data = await apiClient.getArticleHistory(lawId, articleNo);
+                    const snapshots = Array.isArray(data.snapshots) ? data.snapshots : [];
+                    const latest = snapshots[0];
+                    lawInlinePreviewTitle.textContent = `${data.law_name || source.law_name || lawId} 第${data.article_no || articleNo}條`;
+                    lawInlinePreviewStatus.textContent = snapshots.length
+                        ? `已載入 ${snapshots.length} 個官方版本。`
+                        : '官方 API 沒有回傳可顯示的歷史版本。';
+                    lawInlinePreviewText.textContent = snapshots.length
+                        ? snapshots.map(snapshot => `${snapshot.snapshot_label || snapshot.revision_date || '版本'}\n${snapshot.article_text || ''}`).join('\n\n')
+                        : (latest?.article_text || '目前沒有可顯示的條文內容。');
+                } catch (error) {
+                    lawInlinePreviewStatus.textContent = `法條讀取失敗：${error.message}`;
+                    lawInlinePreviewText.textContent = '請改用「開啟官方來源」查看原始法規頁面。';
+                }
+            };
+
+            lawInlinePreviewClose.addEventListener('click', () => {
+                lawInlinePreview.hidden = true;
+                lawInlinePreviewText.textContent = '';
+            });
+
+            const normalizeFindingKey = value => {
+                const original = String(value || '').trim();
+                const key = original
+                    .trim()
+                    .toLowerCase()
+                    .replace(/[\s-]+/g, '_');
+                const aliases = {
+                    supported: 'supported',
+                    support: 'supported',
+                    evidence_supported: 'supported',
+                    countered: 'countered',
+                    contradicted: 'countered',
+                    counter_evidence: 'countered',
+                    adverse_evidence: 'countered',
+                    refuted: 'countered',
+                    mixed: 'mixed',
+                    inconsistent: 'mixed',
+                    evidence_inconsistent: 'mixed',
+                    conflicting: 'mixed',
+                    conflict: 'mixed',
+                    insufficient: 'evidence_insufficient',
+                    unsupported: 'evidence_insufficient',
+                    unknown: 'evidence_insufficient',
+                    '已有支持': 'supported',
+                    '已有證據支持': 'supported',
+                    '存在反向證據': 'countered',
+                    '反向證據': 'countered',
+                    '證據不一致': 'mixed',
+                    '證據互有': 'mixed',
+                    '證據不足': 'evidence_insufficient'
+                };
+                return aliases[original] || aliases[key] || '';
+            };
+
+            const classifyIssueFinding = issue => {
+                const normalized = normalizeFindingKey(issue?.finding);
+                if (normalized) return normalized;
+                const supportingCount = Array.isArray(issue?.supporting_source_ids || issue?.supporting_sources)
+                    ? (issue.supporting_source_ids || issue.supporting_sources).length
+                    : 0;
+                const counterCount = Array.isArray(issue?.counter_source_ids || issue?.counter_sources)
+                    ? (issue.counter_source_ids || issue.counter_sources).length
+                    : 0;
+                if (supportingCount && counterCount) return 'mixed';
+                if (counterCount) return 'countered';
+                if (supportingCount) return 'supported';
+                return 'evidence_insufficient';
+            };
+
+            const formatSourceLabel = source => {
+                const rawLabel = String(source?.name || source?.title || source?.original_name || '未命名來源');
+                const lawName = String(source?.law_name || '').trim();
+                const articleNumber = String(source?.article_no || '')
+                    .trim()
+                    .replace(/^第\s*/, '')
+                    .replace(/\s*條$/, '')
+                    .replace(/\s+/g, '');
+                if (lawName && articleNumber) {
+                    const escapedArticleNumber = articleNumber.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                    const articlePattern = new RegExp(`\\s*第\\s*${escapedArticleNumber}\\s*條`, 'g');
+                    const cleanLawName = lawName.replace(articlePattern, '').replace(/\s{2,}/g, ' ').trim();
+                    if (cleanLawName) return `${cleanLawName} 第 ${articleNumber} 條`;
+                }
+                const seenArticles = new Set();
+                return rawLabel
+                    .replace(/第\s*([0-9]+(?:之\s*[0-9]+)?)\s*條/g, (match, number) => {
+                        const normalizedNumber = number.replace(/\s+/g, '');
+                        if (seenArticles.has(normalizedNumber)) return '';
+                        seenArticles.add(normalizedNumber);
+                        return `第 ${normalizedNumber} 條`;
+                    })
+                    .replace(/\s{2,}/g, ' ')
+                    .trim();
+            };
+
+            let activeIssueFilter = 'all';
+
+            const applyIssueFilter = filter => {
+                const cards = [...issueLawList.querySelectorAll('.issue-law-card')];
+                const counts = cards.reduce((result, card) => {
+                    result[card.dataset.finding] = (result[card.dataset.finding] || 0) + 1;
+                    return result;
+                }, { all: cards.length });
+                const requestedFilter = filter || 'all';
+                activeIssueFilter = requestedFilter !== 'all' && !counts[requestedFilter] ? 'all' : requestedFilter;
+                let visibleCount = 0;
+                cards.forEach(card => {
+                    const visible = activeIssueFilter === 'all' || card.dataset.finding === activeIssueFilter;
+                    card.hidden = !visible;
+                    if (visible) visibleCount += 1;
+                });
+                issueFilterButtons.forEach(button => {
+                    const buttonFilter = button.dataset.issueFilter;
+                    const count = counts[buttonFilter] || 0;
+                    const label = button.dataset.filterLabel || button.textContent;
+                    button.textContent = `${label} ${count}`;
+                    button.disabled = buttonFilter !== 'all' && count === 0;
+                    button.classList.toggle('is-active', buttonFilter === activeIssueFilter);
+                });
+                issueFilterStatus.textContent = `${visibleCount} 個爭議點`;
+            };
+
+            issueFilterButtons.forEach(button => {
+                button.addEventListener('click', () => applyIssueFilter(button.dataset.issueFilter));
+            });
+
+            const renderEvidenceGap = result => {
+                evidenceGapList.replaceChildren();
+                const checklist = Array.isArray(result?.evidence_checklist)
+                    ? result.evidence_checklist.filter(item => Array.isArray(item?.requests) && item.requests.length)
+                    : [];
+                evidenceGap.hidden = !checklist.length;
+                if (!checklist.length) return;
+                checklist.forEach(item => {
+                    const row = document.createElement('div');
+                    row.className = 'evidence-gap-item';
+                    const title = document.createElement('strong');
+                    title.textContent = `${item.issue_title || '此爭點'}：`;
+                    row.append(title);
+                    item.requests.forEach((request, index) => {
+                        if (index) row.append(document.createTextNode('；'));
+                        const documents = Array.isArray(request.requested_documents) && request.requested_documents.length
+                            ? `（建議文件：${request.requested_documents.join('、')}）`
+                            : '';
+                        row.append(document.createTextNode(
+                            `${request.category || '補件'}：${request.prompt || ''}${documents}`
+                        ));
+                    });
+                    evidenceGapList.append(row);
+                });
+            };
+
+            const renderIssueLawMap = (result, analysisFile = getActiveQueueFile()) => {
+                issueLawList.replaceChildren();
+                const issues = Array.isArray(result?.issues) ? result.issues : [];
+                const sources = Array.isArray(result?.sources) ? result.sources : [];
+                if (!issues.length) {
+                    issueLawMap.hidden = true;
+                    renderEvidenceGap(null);
+                    return;
+                }
+
+                const sourceMap = new Map(sources.map(source => [
+                    source.source_id || source.id || source.url || source.name,
+                    source
+                ]));
+                const resolveSources = ids => (Array.isArray(ids) ? ids : [])
+                    .map(item => typeof item === 'object' ? item : sourceMap.get(item))
+                    .filter(Boolean);
+                const sourceKey = source => source.source_id || source.id || source.url || source.name;
+                const dedupeSources = items => [...new Map(items.map(source => [sourceKey(source), source])).values()];
+                const isLegalSource = source => {
+                    const evidenceType = String(source.evidence_type || source.type || '').toLowerCase();
+                    const sourceName = String(source.name || source.title || '');
+                    return Boolean(source.fname && source.article_no)
+                        || evidenceType.includes('official')
+                        || evidenceType.includes('law')
+                        || evidenceType.includes('法規')
+                        || /(?:法|條例|規則).{0,20}第\s*\d+/.test(sourceName);
+                };
+                const normalizeSearchText = value => String(value || '')
+                    .toLowerCase()
+                    .replace(/[\s　「」『』（）()、，。,．.:：；;／/\\-]/g, '');
+                const inferLegalSources = (issue, candidates) => {
+                    const issueText = normalizeSearchText([
+                        issue.title,
+                        issue.claimant_position || issue.claim,
+                        issue.agency_position,
+                        issue.conclusion
+                    ].join(' '));
+                    return candidates.filter(source => {
+                        const sourceName = String(source.name || source.title || '');
+                        const normalizedName = normalizeSearchText(sourceName);
+                        const article = sourceName.match(/第\s*\d+(?:之\d+)?\s*條/);
+                        const articleText = article ? normalizeSearchText(article[0]) : '';
+                        const lawName = normalizeSearchText(source.law_name || sourceName.replace(/第\s*\d+(?:之\d+)?\s*條/g, ''));
+                        const lawNameMatches = lawName.length >= 4 && issueText.includes(lawName);
+                        const articleMatches = articleText.length >= 2 && issueText.includes(articleText);
+                        return lawNameMatches || articleMatches || issueText.includes(normalizedName);
+                    });
+                };
+
+                const addSourceGroup = (card, label, groupSources) => {
+                    const items = dedupeSources(groupSources);
+                    if (!items.length) return;
+                    const group = document.createElement('div');
+                    group.className = 'issue-law-group';
+                    const groupLabel = document.createElement('span');
+                    groupLabel.className = 'issue-law-group-label';
+                    groupLabel.textContent = label;
+                    const links = document.createElement('div');
+                    links.className = 'issue-law-sources';
+                    items.forEach(source => {
+                        const canPreviewLaw = Boolean(source.fname && source.article_no);
+                        const caseDocumentId = getCaseDocumentId(source);
+                        const canReadDocument = Boolean(caseDocumentId) && !canPreviewLaw;
+                        const link = document.createElement(canPreviewLaw || canReadDocument ? 'button' : (source.url ? 'a' : 'span'));
+                        link.className = `issue-law-source${canPreviewLaw ? ' is-law' : canReadDocument ? ' is-document' : ''}`;
+                        link.textContent = formatSourceLabel(source);
+                        if (canPreviewLaw || canReadDocument) {
+                            link.type = 'button';
+                            link.title = canPreviewLaw ? '在本頁預覽法條內容' : '開啟這份卷證';
+                            link.addEventListener('click', () => canPreviewLaw
+                                ? loadInlineArticleHistory(source)
+                                : openApiDocument(source));
+                        } else if (source.url) {
+                            link.href = resolveSourceUrl(source.url);
+                            link.target = '_blank';
+                            link.rel = 'noopener noreferrer';
+                        }
+                        if (source.source_id) {
+                            const id = document.createElement('small');
+                            id.textContent = `【${source.source_id}】`;
+                            link.append(id);
+                        }
+                        links.append(link);
+                    });
+                    group.append(groupLabel, links);
+                    card.append(group);
+                };
+
+                issues.forEach((issue, index) => {
+                    const card = document.createElement('article');
+                    card.className = 'issue-law-card';
+                    const findingKey = classifyIssueFinding(issue);
+                    card.dataset.finding = findingKey;
+                    const header = document.createElement('div');
+                    header.className = 'issue-law-card-header';
+                    const title = document.createElement('h4');
+                    title.textContent = `${index + 1}. ${issue.title || '未命名爭議點'}`;
+                    header.append(title);
+                    if (issue.finding) {
+                        const finding = document.createElement('span');
+                        // API 使用底線命名（例如 evidence_insufficient），CSS 使用連字號。
+                        // 統一後才能正確套用紅色／黃色／綠色狀態樣式。
+                        const findingClass = findingKey.replaceAll('_', '-');
+                        finding.className = `issue-law-type is-${findingClass}`;
+                        finding.textContent = ({
+                            supported: '已有證據支持',
+                            countered: '存在反向證據',
+                            mixed: '證據不一致',
+                            evidence_insufficient: '證據不足'
+                        })[findingKey] || issue.finding;
+                        header.append(finding);
+                    }
+                    card.append(header);
+
+                    const addCopy = (label, value) => {
+                        if (!value) return;
+                        const paragraph = document.createElement('p');
+                        paragraph.className = 'issue-law-copy';
+                        const strong = document.createElement('strong');
+                        strong.textContent = `${label}：`;
+                        paragraph.append(strong, document.createTextNode(value));
+                        card.append(paragraph);
+                    };
+                    addCopy('訴願人主張', issue.claimant_position || issue.claim);
+                    addCopy('原機關立場', issue.agency_position);
+                    if (issue.conclusion) {
+                        const conclusion = document.createElement('p');
+                        conclusion.className = 'issue-law-conclusion';
+                        conclusion.textContent = issue.conclusion;
+                        card.append(conclusion);
+                    }
+
+                    const supporting = resolveSources(issue.supporting_source_ids || issue.supporting_sources);
+                    const counter = resolveSources(issue.counter_source_ids || issue.counter_sources);
+                    const explicitLaws = resolveSources(
+                        issue.related_law_source_ids || issue.related_law_ids || issue.legal_source_ids
+                    );
+                    const allRelated = resolveSources(issue.related_source_ids || issue.source_ids);
+                    const related = dedupeSources([...explicitLaws, ...allRelated, ...supporting, ...counter]);
+                    const legalCandidates = sources.filter(isLegalSource);
+                    const legalSources = dedupeSources([
+                        ...related.filter(isLegalSource),
+                        ...inferLegalSources(issue, legalCandidates)
+                    ]);
+                    const supportingEvidence = dedupeSources(supporting.filter(source => !isLegalSource(source)));
+                    const counterEvidence = dedupeSources(counter.filter(source => !isLegalSource(source)));
+
+                    addSourceGroup(card, '相關法規', legalSources);
+                    addSourceGroup(card, '支持證據', supportingEvidence);
+                    addSourceGroup(card, '反向證據', counterEvidence);
+                    if (!legalSources.length && !supportingEvidence.length && !counterEvidence.length) {
+                        const empty = document.createElement('p');
+                        empty.className = 'issue-law-empty';
+                        empty.textContent = 'API 尚未回傳與此爭點明確對應的法規或證據來源。';
+                        card.append(empty);
+                    }
+                    if (Array.isArray(issue.open_questions) && issue.open_questions.length) {
+                        addCopy('待補資料', issue.open_questions.join('；'));
+                    }
+                    issueLawList.append(card);
+                });
+                issueLawMap.hidden = false;
+                applyIssueFilter(activeIssueFilter);
+                renderEvidenceGap(result);
+            };
+
+            const renderFullResearchResult = result => {
+                const sources = Array.isArray(result?.sources) ? result.sources : [];
+                const legal = result?.legal_research || {};
+                const citations = Array.isArray(legal.explicit_citations)
+                    ? legal.explicit_citations.map(item => `${item.law_name || ''}第${item.article_no || ''}條`).filter(Boolean)
+                    : [];
+                const hasContent = Boolean(
+                    result && (result.answer || result.date_resolution || result.decision_draft || sources.length || citations.length)
+                );
+                researchResultDetails.hidden = !hasContent;
+                if (!hasContent) {
+                    researchAnswer.textContent = '';
+                    researchSourceList.replaceChildren();
+                    researchDecisionDraft.hidden = true;
+                    researchDateResolution.hidden = true;
+                    researchLegalResolution.hidden = true;
+                    return;
+                }
+                researchAnswer.textContent = result.answer || 'API 沒有回傳額外研究摘要；爭議點結果顯示於上方。';
+                researchDateResolution.textContent = result.date_resolution || '';
+                researchDateResolution.hidden = !result.date_resolution;
+                researchLegalResolution.textContent = legal.official_evidence_allowed
+                    ? `法規查核：${citations.length ? `已定位並覆核 ${citations.join('、')}` : '已取得可信的官方法規來源。'}`
+                    : '法規查核：尚未取得足以引用的官方法規來源，仍需精確定位與版本覆核。';
+                researchLegalResolution.hidden = !Object.keys(legal).length;
+                researchDecisionDraft.textContent = result.decision_draft || '';
+                researchDecisionDraft.hidden = !result.decision_draft;
+                researchSourceList.replaceChildren();
+                sources.forEach(source => {
+                    const item = document.createElement('li');
+                    const canPreviewLaw = Boolean(source.fname && source.article_no);
+                    const documentId = getCaseDocumentId(source);
+                    const action = document.createElement(canPreviewLaw || documentId ? 'button' : (source.url ? 'a' : 'span'));
+                    action.textContent = formatSourceLabel(source);
+                    if (canPreviewLaw || documentId) {
+                        action.type = 'button';
+                        action.className = 'research-tool-button';
+                        action.addEventListener('click', () => canPreviewLaw
+                            ? loadInlineArticleHistory(source)
+                            : openApiDocument(source));
+                    } else if (source.url) {
+                        action.href = resolveSourceUrl(source.url);
+                        action.target = '_blank';
+                        action.rel = 'noopener noreferrer';
+                    }
+                    const verification = document.createElement('span');
+                    verification.className = 'type';
+                    verification.textContent = source.verified_at
+                        ? `・官方已於 ${String(source.verified_at).replace('T', ' ').slice(0, 16)} 覆核`
+                        : source.evidence_type === 'official_historical_article'
+                            ? '・已核實指定日期版本'
+                            : source.evidence_type === 'case_document' ? '・卷內文件' : '';
+                    item.append(action, verification);
+                    researchSourceList.append(item);
+                });
+            };
+
+            const renderAnalysis = file => {
+                if (!file) {
+                    runAnalysisButton.disabled = true;
+                    analysisStatus.textContent = '尚未選取案件';
+                    analysisStatus.className = 'status-chip';
+                    analysisCaseName.textContent = '等待選取案件';
+                    analysisCaseMeta.textContent = '請點擊上方分析佇列中的案件卡片。';
+                    analysisClaimTitle.textContent = '等待案件資料';
+                    analysisClaimText.textContent = '選取案件後，這裡會準備主要爭議點的分析工作。';
+                    analysisLawTitle.textContent = '等待案件資料';
+                    analysisLawText.textContent = '選取案件後，這裡會準備法規辨識與歷史案例比對。';
+                    renderIssueLawMap(null);
+                    renderFullResearchResult(null);
+                    return;
+                }
+
+                runAnalysisButton.disabled = !file.caseId;
+                analysisStatus.textContent = file.caseId ? '案件已選取' : '等待 API 案件編號';
+                analysisStatus.className = `status-chip${file.caseId ? ' is-complete' : ''}`;
+                analysisCaseName.textContent = file.name;
+                analysisCaseMeta.textContent = file.caseId
+                    ? `${formatBytes(file.size)}・API case_id 已建立`
+                    : `${formatBytes(file.size)}・等待 API 上傳完成`;
+                if (file.analysisResult) {
+                    const issues = file.analysisResult.issues || [];
+                    const sources = file.analysisResult.sources || [];
+                    analysisClaimTitle.textContent = `${issues.length} 個主要爭議點`;
+                    analysisClaimText.textContent = issues.slice(0, 2).map(issue => issue.title).join('；') || 'API 尚未回傳爭議點。';
+                    analysisLawTitle.textContent = `${sources.length} 筆參考依據`;
+                    analysisLawText.textContent = sources.slice(0, 2).map(formatSourceLabel).join('；') || 'API 尚未回傳參考依據。';
+                    renderIssueLawMap(file.analysisResult, file);
+                    renderFullResearchResult(file.analysisResult);
+                } else {
+                    analysisClaimTitle.textContent = '準備分析主要爭議點';
+                    analysisClaimText.textContent = '點擊「開始分析」後，API 會整理案件主張與證據。';
+                    analysisLawTitle.textContent = '準備辨識相關法規';
+                    analysisLawText.textContent = '分析完成後會顯示參考法規與歷史案例來源。';
+                    renderIssueLawMap(null);
+                    renderFullResearchResult(null);
+                }
+            };
+
+            const saveAnalysisResult = (file, result) => {
+                file.analysisResult = result;
+                persistentStorage.setItem('case-analysis-last-result', JSON.stringify({
+                    caseId: file.caseId,
+                    name: file.name,
+                    size: file.size,
+                    result
+                }));
+                saveQueue();
+                renderAnalysis(file);
+            };
+
+            const analyzeSelectedCase = async () => {
+                const caseId = getActiveApiCaseId();
+                const file = caseId ? ensureQueueFileForApiCase(caseId) : getActiveQueueFile();
+                if (!file?.caseId) {
+                    analysisStatus.textContent = '尚未取得 API case_id';
+                    analysisStatus.className = 'status-chip is-error';
+                    return;
+                }
+                const question = researchQuestion.value.trim();
+                if (!question) {
+                    analysisStatus.textContent = '請先輸入研究問題';
+                    analysisStatus.className = 'status-chip is-error';
+                    researchQuestion.focus();
+                    return;
+                }
+                if (!hasResearchAccess()) {
+                    analysisStatus.textContent = '請先設定 API 存取碼';
+                    analysisStatus.className = 'status-chip is-error';
+                    apiSettingsPanel.hidden = false;
+                    apiAccessCodeInput.focus();
+                    return;
+                }
+
+                runAnalysisButton.disabled = true;
+                analysisStatus.textContent = 'API 分析中…';
+                analysisStatus.className = 'status-chip is-uploading';
+                try {
+                    const result = await apiClient.analyzeCase({
+                        caseId: file.caseId,
+                        question,
+                        asOf: researchAsOf.value || null,
+                        useLocalCache: useLocalResearchCache.checked,
+                        onEvent: (event, data) => {
+                            if (event === 'status') {
+                                analysisStatus.textContent = data.message || 'API 分析中…';
+                            }
+                            if (event === 'step') {
+                                analysisStatus.textContent = data.step?.decision || data.step?.name || 'API 分析中…';
+                            }
+                        }
+                    });
+                    saveAnalysisResult(file, result);
+                    analysisStatus.textContent = '分析完成';
+                    analysisStatus.className = 'status-chip is-complete';
+                    await Promise.all([loadResearchRuns(file.caseId), loadApiCases()]);
+                } catch (error) {
+                    analysisStatus.textContent = `分析失敗：${error.message}`;
+                    analysisStatus.className = 'status-chip is-error';
+                } finally {
+                    runAnalysisButton.disabled = !file.caseId;
+                }
+            };
+
+            runAnalysisButton.addEventListener('click', analyzeSelectedCase);
+
+            const selectCase = file => {
+                if ((!file.pdfUrl && !file.caseId) || file.error) return;
+                activeCaseId = file.caseId || file.id;
+                if (file.caseId) rememberActiveCase(file.caseId);
+                else persistentStorage.setItem(activeCaseStorageKey, activeCaseId);
+                renderQueue();
+                renderAnalysis(file);
+                if (file.caseId) {
+                    loadApiCaseDocuments(file.caseId);
+                    loadResearchRuns(file.caseId);
+                }
+            };
+
+            const renderQueue = () => {
+                queueList.replaceChildren();
+                queuedFiles.forEach(file => {
+                    const item = document.createElement('article');
+                    const isActive = file.id === activeCaseId || file.caseId === activeCaseId;
+                    const isReady = Boolean(file.pdfUrl || file.caseId);
+                    item.className = `queue-item${isReady ? ' is-ready' : ''}${isActive ? ' is-selected' : ''}`;
+                    if (isReady && !file.error) {
+                        item.addEventListener('click', event => {
+                            // 卡片本身可點擊選取案件，但卷證下拉選單、檔案選擇與刪除勾選不能觸發卡片重繪。
+                            if (
+                                event.target.closest('.queue-file-icon')
+                                || event.target.closest('.queue-support-actions')
+                                || event.target.closest('.queue-file-select')
+                            ) return;
+                            selectCase(file);
+                        });
+                    }
+
+                    const icon = document.createElement('button');
+                    icon.type = 'button';
+                    icon.className = 'queue-file-icon';
+                    icon.textContent = 'PDF';
+                    icon.disabled = !file.pdfUrl;
+                    icon.title = file.pdfUrl ? '進入 PDF 筆記頁面' : (file.error ? 'PDF 處理失敗' : 'PDF 處理中');
+                    icon.setAttribute(
+                        'aria-label',
+                        file.pdfUrl ? `開啟 ${file.name} 的筆記頁面` : `${file.name} 尚未處理完成`
+                    );
+                    if (file.pdfUrl) {
+                        icon.addEventListener('click', event => {
+                            event.stopPropagation();
+                            openCaseNotes(file);
+                        });
+                    }
+
+                    const copy = document.createElement('button');
+                    copy.type = 'button';
+                    copy.className = 'queue-file-copy';
+                    copy.disabled = !isReady || file.error;
+                    copy.setAttribute('aria-pressed', String(isActive));
+                    copy.setAttribute('aria-label', file.pdfUrl ? `選取案件 ${file.name} 進行主要爭議點分析` : `${file.name} 尚未處理完成`);
+                    const name = document.createElement('div');
+                    name.className = 'queue-file-name';
+                    name.textContent = file.name;
+                    const meta = document.createElement('div');
+                    meta.className = 'queue-file-meta';
+                    const documentCount = Array.isArray(file.documents) ? file.documents.length : 0;
+                    meta.textContent = `${formatBytes(file.size)}・${file.status}${documentCount ? `・卷證 ${documentCount} 件` : ''}`;
+
+                    copy.append(name, meta);
+                    const content = document.createElement('div');
+                    content.className = 'queue-file-content';
+                    const selectLabel = document.createElement('label');
+                    selectLabel.className = 'queue-file-select';
+                    selectLabel.addEventListener('click', event => event.stopPropagation());
+                    const checkbox = document.createElement('input');
+                    checkbox.type = 'checkbox';
+                    checkbox.checked = selectedCaseIds.has(file.id);
+                    checkbox.setAttribute('aria-label', `選取 ${file.name} 以刪除`);
+                    checkbox.addEventListener('change', event => {
+                        event.stopPropagation();
+                        if (checkbox.checked) selectedCaseIds.add(file.id);
+                        else selectedCaseIds.delete(file.id);
+                        updateSelectionControls();
+                    });
+                    const selectText = document.createElement('span');
+                    selectText.textContent = '選取刪除';
+                    selectLabel.append(checkbox, selectText);
+                    content.append(selectLabel);
+                    content.append(copy);
+
+                    if (file.caseId && !file.error) {
+                        const supportActions = document.createElement('div');
+                        supportActions.className = 'queue-support-actions';
+                        const roleSelect = document.createElement('select');
+                        roleSelect.className = 'queue-support-role';
+                        roleSelect.setAttribute('aria-label', `選擇 ${file.name} 的補充卷證類型`);
+                        supportRoles.forEach(role => {
+                            const option = document.createElement('option');
+                            option.value = role.value;
+                            option.textContent = role.label;
+                            roleSelect.append(option);
+                        });
+                        const supportLabel = document.createElement('label');
+                        supportLabel.className = 'queue-support-button';
+                        supportLabel.textContent = '新增卷證';
+                        const supportInput = document.createElement('input');
+                        supportInput.className = 'queue-support-input';
+                        supportInput.type = 'file';
+                        supportInput.multiple = true;
+                        supportInput.accept = '.pdf,.doc,.docx,.rtf,.odt,.txt,.md,.csv,.json';
+                        supportInput.setAttribute('aria-label', `上傳 ${file.name} 的補充卷證`);
+                        supportInput.addEventListener('change', event => {
+                            uploadSupportingDocuments(file, event.target.files, roleSelect.value);
+                        });
+                        supportLabel.append(supportInput);
+                        supportActions.append(roleSelect, supportLabel);
+                        content.append(supportActions);
+                    }
+
+                    item.append(icon, content);
+                    queueList.append(item);
+                });
+                queueEmpty.hidden = queuedFiles.length > 0;
+                queueList.hidden = queuedFiles.length === 0;
+                updateSelectionControls();
+            };
+
+            const prependQueue = files => {
+                selectedCaseIds.clear();
+                const batchEntries = files.map(file => ({
+                    id: `case-${Date.now()}-${++queueSequence}`,
+                    name: file.name,
+                    size: file.size,
+                    status: '等待後端處理',
+                    pdfUrl: '',
+                    caseId: '',
+                    documents: [],
+                    analysisResult: null,
+                    error: false
+                }));
+                queuedFiles = [...batchEntries, ...queuedFiles];
+                renderQueue();
+                queueScroll.scrollTop = 0;
+                return new Set(batchEntries.map(file => file.id));
+            };
+
+            const updateQueueResult = (batchIds, message, isError = false, convertedFiles = [], apiResults = []) => {
+                let convertedIndex = 0;
+                queuedFiles = queuedFiles.map(file => {
+                    if (!batchIds.has(file.id)) return file;
+                    const fallbackFile = convertedFiles[convertedIndex++] || {};
+                    const convertedFile = convertedFiles.find(result => result.source_name === file.name) || fallbackFile;
+                    const apiResult = apiResults.find(result => result.source_name === file.name) || {};
+                    const pdfUrl = convertedFile.pdf_url || (
+                        convertedFile.pdf_name
+                            ? `/uploads/${encodeURIComponent(convertedFile.pdf_name)}`
+                            : ''
+                    );
+                    return {
+                        ...file,
+                        status: apiResult.error ? `研究 API 上傳失敗：${apiResult.error}` : message,
+                        // 外部研究 API 失敗時仍保留本機 PDF，方便先檢查文件與錯誤訊息。
+                        pdfUrl,
+                        caseId: isError ? '' : (apiResult.case_id || file.caseId || ''),
+                        apiDocument: apiResult.document || file.apiDocument || null,
+                        documents: apiResult.document ? [apiResult.document] : (file.documents || []),
+                        error: isError || Boolean(apiResult.error)
+                    };
+                });
+                saveQueue();
+                renderQueue();
+                queueScroll.scrollTop = 0;
+                setQueueStatus(
+                    isError ? '上傳失敗' : `${queuedFiles.length} 件待分析`,
+                    isError ? 'error' : 'complete'
+                );
+            };
+
+            const uploadSupportingDocuments = async (caseFile, selectedFiles, role) => {
+                const files = Array.from(selectedFiles || []);
+                if (!files.length || !caseFile.caseId) return;
+
+                caseFile.status = `正在上傳 ${files.length} 份補充卷證…`;
+                renderQueue();
+                try {
+                    const uploadedDocuments = [];
+                    for (const file of files) {
+                        const result = await apiClient.uploadDocument({ file, role, caseId: caseFile.caseId });
+                        if (result.document) uploadedDocuments.push(result.document);
+                    }
+                    try {
+                        const latest = await apiClient.listCaseDocuments(caseFile.caseId);
+                        caseFile.documents = latest.documents || uploadedDocuments;
+                    } catch (_error) {
+                        caseFile.documents = [...(caseFile.documents || []), ...uploadedDocuments];
+                    }
+                    caseFile.status = `已上傳訴願書與 ${caseFile.documents.length} 份卷證`;
+                    caseFile.error = false;
+                    saveQueue();
+                    renderQueue();
+                } catch (error) {
+                    caseFile.status = `補充卷證失敗：${error.message}`;
+                    caseFile.error = false;
+                    renderQueue();
+                }
+            };
+
+            const deleteSelectedQueueFiles = () => {
+                const selectedFiles = queuedFiles.filter(file => selectedCaseIds.has(file.id));
+                if (!selectedFiles.length) return;
+                const names = selectedFiles.slice(0, 5).map(file => `・${file.name}`).join('\n');
+                const suffix = selectedFiles.length > 5 ? `\n・其餘 ${selectedFiles.length - 5} 件` : '';
+                const confirmed = window.confirm(`確定要從分析佇列刪除 ${selectedFiles.length} 件案件嗎？\n${names}${suffix}\n\n這只會移除本機佇列，不會刪除外部研究 API 的案件資料。`);
+                if (!confirmed) return;
+                const selectedIds = new Set(selectedFiles.map(file => file.id));
+                queuedFiles = queuedFiles.filter(item => !selectedIds.has(item.id));
+                selectedCaseIds.clear();
+                if (selectedFiles.some(file => activeCaseId === file.id || activeCaseId === file.caseId)) {
+                    activeCaseId = '';
+                    persistentStorage.removeItem(activeCaseStorageKey);
+                    renderAnalysis(null);
+                }
+                saveQueue();
+                renderQueue();
+                setQueueStatus(queuedFiles.length ? `${queuedFiles.length} 件待分析` : '等待上傳', queuedFiles.length ? 'complete' : '');
+            };
+
+            deleteSelectedCasesButton.addEventListener('click', deleteSelectedQueueFiles);
+
+            const showProgress = (percent, label, state = 'uploading') => {
+                const safePercent = Math.max(0, Math.min(100, Math.round(percent)));
+                if (progressTimer) {
+                    clearTimeout(progressTimer);
+                    progressTimer = null;
+                }
+                progress.hidden = false;
+                progress.classList.toggle('is-error', state === 'error');
+                dropZone.classList.add('has-upload-progress');
+                dropZone.classList.remove('is-progress-fading');
+                dropZone.style.setProperty('--upload-progress', `${safePercent}%`);
+                progressLabel.textContent = label;
+                progressPercent.textContent = `${safePercent}%`;
+                progressTrack.setAttribute('aria-valuenow', String(safePercent));
+            };
+
+            const hideProgress = () => {
+                progressTimer = null;
+                progress.hidden = true;
+                progress.classList.remove('is-error');
+                dropZone.classList.remove('has-upload-progress', 'is-progress-fading');
+                dropZone.style.setProperty('--upload-progress', '0%');
+                progressTrack.setAttribute('aria-valuenow', '0');
+            };
+
+            const fadeProgress = () => {
+                dropZone.classList.add('is-progress-fading');
+                progressTimer = setTimeout(hideProgress, 1000);
+            };
+
+            const uploadFiles = async selectedFiles => {
+                const files = Array.from(selectedFiles);
+                if (!files.length) return;
+
+                const containsInvalidFile = files.some(file => (
+                    file.type !== 'application/pdf' && !file.name.toLowerCase().endsWith('.pdf')
+                ));
+                if (containsInvalidFile) {
+                    showProgress(0, '只能上傳 PDF 檔案', 'error');
+                    setQueueStatus('檔案格式錯誤', 'error');
+                    fileInput.value = '';
+                    return;
+                }
+
+                const batchIds = prependQueue(files);
+                setQueueStatus('正在上傳', 'uploading');
+                dropZone.classList.add('is-uploading');
+                fileInput.disabled = true;
+                showProgress(0, `準備上傳 ${files.length} 個 PDF…`);
+                const apiResults = [];
+                let localResult = { files: [] };
+
+                try {
+                    showProgress(8, '本機準備 PDF 文字資料…');
+                    const localFormData = new FormData();
+                    files.forEach(file => localFormData.append('files', file));
+                    const localResponse = await fetch('/convert-case', { method: 'POST', body: localFormData });
+                    localResult = await localResponse.json().catch(() => ({}));
+                    if (!localResponse.ok) throw new Error(localResult.error || '本機 PDF 轉換失敗');
+
+                    for (let index = 0; index < files.length; index += 1) {
+                        const file = files[index];
+                        const percent = 15 + ((index + 1) / files.length) * 75;
+                        showProgress(percent, `研究 API：正在上傳第 ${index + 1} / ${files.length} 份…`);
+                        try {
+                            // 每份待審訴願書建立一個獨立 case_id，避免批次案件彼此混在同一案。
+                            const result = await apiClient.uploadDocument({ file, role: 'appeal_petition' });
+                            apiResults.push({ ...result, source_name: file.name });
+                        } catch (error) {
+                            apiResults.push({ source_name: file.name, error: error.message });
+                        }
+                    }
+
+                    const successCount = apiResults.filter(result => result.case_id && !result.error).length;
+                    const failedCount = apiResults.length - successCount;
+                    if (!successCount) throw new Error('研究 API 沒有成功建立任何 case_id，請檢查 API 網址與存取碼。');
+
+                    showProgress(100, failedCount ? `完成，${failedCount} 份 API 上傳失敗` : '後端處理完成', failedCount ? 'error' : 'complete');
+                    updateQueueResult(batchIds, 'PDF 已上傳・研究 API 已建立案件', false, localResult.files || [], apiResults);
+                    if (!failedCount) fadeProgress();
+                    else setTimeout(() => fadeProgress(), 1000);
+                } catch (error) {
+                    showProgress(0, `上傳失敗：${error.message}`, 'error');
+                    updateQueueResult(batchIds, error.message, true, localResult.files || [], apiResults);
+                } finally {
+                    dropZone.classList.remove('is-uploading');
+                    fileInput.disabled = false;
+                    fileInput.value = '';
+                }
+            };
+
+            fileInput.addEventListener('change', event => uploadFiles(event.target.files));
+            ['dragenter', 'dragover'].forEach(eventName => {
+                dropZone.addEventListener(eventName, event => {
+                    event.preventDefault();
+                    if (!fileInput.disabled) dropZone.classList.add('is-dragging');
+                });
+            });
+            ['dragleave', 'drop'].forEach(eventName => {
+                dropZone.addEventListener(eventName, event => {
+                    event.preventDefault();
+                    dropZone.classList.remove('is-dragging');
+                });
+            });
+            dropZone.addEventListener('drop', event => {
+                if (!fileInput.disabled) uploadFiles(event.dataTransfer.files);
+            });
+
+            queuedFiles = restoreQueue();
+            let activeFile = queuedFiles.find(file => file.id === activeCaseId || file.caseId === activeCaseId);
+            if (!activeFile && /^[0-9a-f-]{36}$/i.test(activeCaseId)) {
+                activeFile = ensureQueueFileForApiCase(activeCaseId);
+            }
+            if (!activeFile && activeCaseId) {
+                activeCaseId = '';
+                persistentStorage.removeItem(activeCaseStorageKey);
+            }
+            renderQueue();
+            renderAnalysis(activeFile);
+            if (queuedFiles.length) {
+                setQueueStatus(`${queuedFiles.length} 件待分析`, 'complete');
+            }
+            hideProgress();
+            loadApiCases();
+        })();
+    </script>
+</body>
+</html>

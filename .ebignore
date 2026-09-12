@@ -1,0 +1,24 @@
+.DS_Store
+.git/
+.venv/
+__pycache__/
+*.py[cod]
+
+# 開發、教學與舊版檔案不進入 AWS 部署包
+archive/
+docs/
+examples/
+notebooks/
+tests/
+data/examples/
+data/inputs/
+data/processed/notebook/
+data/processed/json_legacy_model/
+data/processed/reports/
+data/processed/text/
+data/vector_db/
+
+# 上傳資料改由 EFS 保存，不隨程式版本部署
+uploads/
+case_uploads/
+data/processed/json_web_uploads/
