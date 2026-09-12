@@ -642,7 +642,7 @@
         .api-settings[hidden] { display: none; }
         .api-settings-grid {
             display: grid;
-            grid-template-columns: minmax(220px, 1.3fr) minmax(160px, .8fr) minmax(160px, .8fr) auto;
+            grid-template-columns: minmax(220px, 1.3fr) minmax(160px, .8fr) auto;
             gap: 10px;
             align-items: end;
             margin-top: 14px;
@@ -807,7 +807,6 @@
                 <div class="api-settings-grid">
                     <div class="api-settings-field"><label for="apiBaseUrl">API 網址</label><input id="apiBaseUrl" type="url" autocomplete="off"></div>
                     <div class="api-settings-field"><label for="apiAccessCode">存取碼</label><input id="apiAccessCode" type="password" autocomplete="off" placeholder="必要時填寫"></div>
-                    <div class="api-settings-field"><label for="apiGeminiKey">Gemini API Key</label><input id="apiGeminiKey" type="password" autocomplete="off" placeholder="可選"></div>
                     <button class="api-settings-save" id="saveApiSettings" type="button">儲存設定</button>
                 </div>
                 <p class="api-settings-note">設定只會保存於目前瀏覽器；上傳案件與分析請求會送到此 API。</p>
@@ -1056,7 +1055,6 @@
             const researchSourceList = document.getElementById('researchSourceList');
             const apiBaseUrlInput = document.getElementById('apiBaseUrl');
             const apiAccessCodeInput = document.getElementById('apiAccessCode');
-            const apiGeminiKeyInput = document.getElementById('apiGeminiKey');
             const saveApiSettingsButton = document.getElementById('saveApiSettings');
             const apiSettingsStatus = document.getElementById('apiSettingsStatus');
             const toggleApiSettingsButton = document.getElementById('toggleApiSettings');
@@ -1123,10 +1121,6 @@
                 apiBaseUrlInput.disabled = serverResearchConfig.allow_custom_api_url === false;
                 apiAccessCodeInput.value = settings.accessCode;
                 apiAccessCodeInput.placeholder = serverAccessConfigured ? '伺服器已安全設定，可留空' : '必要時填寫';
-                apiGeminiKeyInput.value = settings.geminiApiKey;
-                apiGeminiKeyInput.placeholder = serverResearchConfig.gemini_api_key_configured
-                    ? '伺服器已安全設定，可留空'
-                    : '必要時填寫';
                 const ready = serverAccessConfigured || Boolean(settings.accessCode);
                 apiSettingsStatus.textContent = serverAccessConfigured
                     ? 'AWS 伺服器已安全設定 API 存取資訊'
@@ -1156,8 +1150,7 @@
                 }
                 const settings = apiClient.saveSettings({
                     apiBaseUrl: apiBaseUrlInput.value,
-                    accessCode: apiAccessCodeInput.value,
-                    geminiApiKey: apiGeminiKeyInput.value
+                    accessCode: apiAccessCodeInput.value
                 });
                 apiBaseUrlInput.value = settings.apiBaseUrl;
                 apiSettingsStatus.textContent = '設定已儲存';

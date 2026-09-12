@@ -2,25 +2,24 @@
     const DEFAULT_API_BASE_URL = 'https://temporal-law-api-867487539733.asia-east1.run.app';
     const API_BASE_URL_KEY = 'temporal-law-api-base-url';
     const ACCESS_CODE_KEY = 'temporal-law-access-code';
-    const GEMINI_API_KEY_KEY = 'temporal-law-gemini-api-key';
+
+    // Gemini 金鑰改由研究 API 的伺服器環境管理；移除舊版可能殘留在瀏覽器的值。
+    localStorage.removeItem('temporal-law-gemini-api-key');
 
     const normalizeBaseUrl = value => String(value || DEFAULT_API_BASE_URL).trim().replace(/\/+$/, '');
 
     function getSettings() {
         return {
             apiBaseUrl: normalizeBaseUrl(localStorage.getItem(API_BASE_URL_KEY) || DEFAULT_API_BASE_URL),
-            accessCode: localStorage.getItem(ACCESS_CODE_KEY) || '',
-            geminiApiKey: localStorage.getItem(GEMINI_API_KEY_KEY) || ''
+            accessCode: localStorage.getItem(ACCESS_CODE_KEY) || ''
         };
     }
 
-    function saveSettings({ apiBaseUrl, accessCode, geminiApiKey }) {
+    function saveSettings({ apiBaseUrl, accessCode }) {
         const normalizedUrl = normalizeBaseUrl(apiBaseUrl);
         localStorage.setItem(API_BASE_URL_KEY, normalizedUrl);
         if (accessCode) localStorage.setItem(ACCESS_CODE_KEY, accessCode.trim());
         else localStorage.removeItem(ACCESS_CODE_KEY);
-        if (geminiApiKey) localStorage.setItem(GEMINI_API_KEY_KEY, geminiApiKey.trim());
-        else localStorage.removeItem(GEMINI_API_KEY_KEY);
         return getSettings();
     }
 
@@ -30,8 +29,7 @@
             ...extra,
             // 先送到同源 Flask 代理，再由後端轉送給研究 API，避免瀏覽器 CORS 預檢被擋下。
             ...(settings.apiBaseUrl ? { 'X-Research-Api-Base-Url': settings.apiBaseUrl } : {}),
-            ...(settings.accessCode ? { 'X-Access-Code': settings.accessCode } : {}),
-            ...(settings.geminiApiKey ? { 'X-Gemini-Api-Key': settings.geminiApiKey } : {})
+            ...(settings.accessCode ? { 'X-Access-Code': settings.accessCode } : {})
         };
     }
 
