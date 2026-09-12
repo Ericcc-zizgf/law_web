@@ -690,6 +690,16 @@
         .research-tool-button.primary:hover, .research-tool-button.primary:focus-visible { color: #fff; background: #0a5d56; }
         .research-tool-button:disabled { cursor: not-allowed; opacity: .45; }
         .research-tool-field { width: 100%; min-height: 34px; padding: 6px 8px; border: 1px solid var(--line); border-radius: 7px; color: var(--ink); background: #fff; font: inherit; font-size: 12px; }
+        .api-session-browser { margin-top: 10px; border: 1px solid #e1e9e7; border-radius: 9px; background: #fff; }
+        .api-session-browser > summary { padding: 9px 11px; color: var(--navy); cursor: pointer; font-size: 12px; font-weight: 800; }
+        .api-session-list { display: grid; gap: 6px; max-height: 220px; padding: 0 8px 8px; overflow: auto; }
+        .api-session-empty { margin: 0 !important; padding: 8px 3px; color: var(--muted) !important; }
+        .api-session-item { width: 100%; padding: 9px 10px; border: 1px solid transparent; border-radius: 8px; color: var(--ink); background: #f8fbfa; cursor: pointer; text-align: left; font: inherit; transition: border-color .18s ease, background-color .18s ease, box-shadow .18s ease; }
+        .api-session-item:hover, .api-session-item:focus-visible { border-color: #a9cec7; background: #f2f9f7; outline: none; }
+        .api-session-item.is-active { border-color: var(--teal); background: #eef8f5; box-shadow: inset 3px 0 0 var(--teal); }
+        .api-session-item strong { display: block; overflow: hidden; color: var(--navy); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+        .api-session-item span { display: block; margin-top: 3px; color: var(--muted); font-size: 10px; line-height: 1.45; }
+        .api-session-select-label { display: block; margin: 10px 0 4px; color: var(--muted); font-size: 10px; font-weight: 750; }
         .research-tool-form { display: grid; grid-template-columns: minmax(0, 1fr) minmax(80px, .45fr) auto; gap: 7px; align-items: end; }
         .research-tool-form label { display: block; margin-bottom: 4px; color: var(--muted); font-size: 11px; font-weight: 750; }
         .research-tool-form-field { min-width: 0; }
@@ -950,6 +960,13 @@
                         </div>
                     </div>
                     <p id="activeApiCaseInfo">案件卡片建立後，這裡會同步目前的 API Session。</p>
+                    <details class="api-session-browser" id="apiSessionBrowser" open>
+                        <summary>案件清單</summary>
+                        <div class="api-session-list" id="apiCaseSessionList" aria-label="案件 Session 清單">
+                            <p class="api-session-empty">尚未載入案件。</p>
+                        </div>
+                    </details>
+                    <label class="api-session-select-label" for="apiCaseSelect">快速選擇</label>
                     <select class="research-tool-field" id="apiCaseSelect" aria-label="選擇案件 Session">
                         <option value="">尚未載入案件</option>
                     </select>
@@ -1024,6 +1041,7 @@
             const deleteSelectedCasesButton = document.getElementById('deleteSelectedCases');
             const queueStorageKey = 'case-analysis-queue';
             const activeCaseStorageKey = 'case-analysis-active-id';
+            const sessionBrowserStorageKey = 'case-analysis-session-browser-open';
             const analysisStatus = document.getElementById('analysisStatus');
             const analysisCaseName = document.getElementById('analysisCaseName');
             const analysisCaseMeta = document.getElementById('analysisCaseMeta');
@@ -1062,6 +1080,8 @@
             const createApiCaseButton = document.getElementById('createApiCase');
             const refreshApiCasesButton = document.getElementById('refreshApiCases');
             const activeApiCaseInfo = document.getElementById('activeApiCaseInfo');
+            const apiSessionBrowser = document.getElementById('apiSessionBrowser');
+            const apiCaseSessionList = document.getElementById('apiCaseSessionList');
             const apiCaseSelect = document.getElementById('apiCaseSelect');
             const apiDocumentList = document.getElementById('apiDocumentList');
             const apiCaseStatus = document.getElementById('apiCaseStatus');
@@ -1105,6 +1125,10 @@
                 }
                 return null;
             };
+            apiSessionBrowser.open = readStoredValue(sessionBrowserStorageKey) !== 'false';
+            apiSessionBrowser.addEventListener('toggle', () => {
+                persistentStorage.setItem(sessionBrowserStorageKey, String(apiSessionBrowser.open));
+            });
             const initialCaseId = new URLSearchParams(window.location.search).get('case_id') || '';
             let activeCaseId = /^[0-9a-f-]{36}$/i.test(initialCaseId)
                 ? initialCaseId
@@ -1319,28 +1343,60 @@
                 }
             };
 
+            const formatSessionActivity = value => {
+                if (!value) return '尚無活動時間';
+                const date = new Date(value);
+                if (Number.isNaN(date.getTime())) return String(value).replace('T', ' ').slice(0, 16);
+                return date.toLocaleString('zh-TW', {
+                    year: 'numeric',
+                    month: '2-digit',
+                    day: '2-digit',
+                    hour: '2-digit',
+                    minute: '2-digit'
+                });
+            };
+
             const renderApiCases = cases => {
                 const items = Array.isArray(cases) ? cases : [];
                 apiCasesCache = items;
                 const activeId = getActiveApiCaseId();
                 apiCaseSelect.replaceChildren();
+                apiCaseSessionList.replaceChildren();
                 if (!items.length) {
                     const option = document.createElement('option');
                     option.value = '';
                     option.textContent = '尚無案件 Session';
                     apiCaseSelect.append(option);
+                    const empty = document.createElement('p');
+                    empty.className = 'api-session-empty';
+                    empty.textContent = '尚無案件；上傳訴願書或按「＋ 新案件」建立。';
+                    apiCaseSessionList.append(empty);
                     activeApiCaseInfo.textContent = '尚無案件；上傳訴願書或按「＋ 新案件」建立。';
                     renderApiDocuments([]);
                     return;
                 }
+                const selectedId = items.some(item => item.case_id === activeId) ? activeId : items[0].case_id;
                 items.forEach(item => {
                     const option = document.createElement('option');
                     option.value = item.case_id || '';
                     option.textContent = `${item.title || '未命名訴願案件'}・${item.document_count || 0} 份卷證・${item.run_count || 0} 次研究`;
                     option.disabled = !item.case_id;
                     apiCaseSelect.append(option);
+
+                    const sessionButton = document.createElement('button');
+                    sessionButton.type = 'button';
+                    sessionButton.className = `api-session-item${item.case_id === selectedId ? ' is-active' : ''}`;
+                    sessionButton.dataset.caseId = item.case_id || '';
+                    sessionButton.disabled = !item.case_id;
+                    sessionButton.setAttribute('aria-pressed', String(item.case_id === selectedId));
+                    const title = document.createElement('strong');
+                    title.textContent = item.title || '未命名訴願案件';
+                    const meta = document.createElement('span');
+                    meta.textContent = `${item.document_count || 0} 份卷證・${item.run_count || 0} 次研究・${formatSessionActivity(item.last_activity_at)}`;
+                    sessionButton.append(title, meta);
+                    sessionButton.addEventListener('click', () => selectApiCase(item.case_id));
+                    apiCaseSessionList.append(sessionButton);
                 });
-                const selectedId = items.some(item => item.case_id === activeId) ? activeId : items[0].case_id;
                 apiCaseSelect.value = selectedId || '';
                 activeApiCaseInfo.textContent = selectedId
                     ? `目前 API Session：${selectedId}`
@@ -1369,6 +1425,12 @@
             const selectApiCase = async caseId => {
                 if (!caseId) return;
                 rememberActiveCase(caseId);
+                apiCaseSelect.value = caseId;
+                apiCaseSessionList.querySelectorAll('.api-session-item').forEach(item => {
+                    const isActive = item.dataset.caseId === caseId;
+                    item.classList.toggle('is-active', isActive);
+                    item.setAttribute('aria-pressed', String(isActive));
+                });
                 const selectedCase = apiCasesCache.find(item => item.case_id === caseId);
                 const queueFile = ensureQueueFileForApiCase(caseId, selectedCase?.title);
                 activeApiCaseInfo.textContent = `目前 API Session：${caseId}`;
