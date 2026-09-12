@@ -40,7 +40,7 @@ App Runner 不在可用服務清單，因此不採用。S3、DynamoDB、S3 Vecto
    - `EFS_MOUNT_DIRECTORY=/mnt/efs/legal-demo`
    - `PERSISTENT_DATA_ROOT=/mnt/efs/legal-demo`
    - `RESEARCH_API_BASE_URL=https://temporal-law-api-867487539733.asia-east1.run.app`
-   - `ALLOW_CUSTOM_RESEARCH_API_URL=false`
+   - `ALLOW_CUSTOM_RESEARCH_API_URL=true`（允許在第二步的 API 設定中切換研究 API 網址）
    - `RESEARCH_ACCESS_CODE`：由 Secrets Manager 注入
    - `GEMINI_API_KEY`：由 Secrets Manager 注入
 

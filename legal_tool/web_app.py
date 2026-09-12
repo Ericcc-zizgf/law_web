@@ -57,7 +57,7 @@ RESEARCH_API_DEFAULT_URL = os.environ.get(
     "https://temporal-law-api-867487539733.asia-east1.run.app",
 ).strip().rstrip("/")
 ALLOW_CUSTOM_RESEARCH_API_URL = os.environ.get(
-    "ALLOW_CUSTOM_RESEARCH_API_URL", "false"
+    "ALLOW_CUSTOM_RESEARCH_API_URL", "true"
 ).strip().lower() in {"1", "true", "yes", "on"}
 RESEARCH_ACCESS_CODE = os.environ.get("RESEARCH_ACCESS_CODE", "").strip()
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "").strip()

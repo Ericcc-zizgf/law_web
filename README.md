@@ -188,7 +188,7 @@ PORT=5050 ./.venv/bin/python app.py
 | `RESEARCH_API_BASE_URL` | 研究 API 的基礎網址 | 你的研究 API 網址 |
 | `RESEARCH_ACCESS_CODE` | 研究 API 存取碼 | 透過 Secrets Manager 注入 |
 | `GEMINI_API_KEY` | 研究 API 所需的 Gemini 金鑰 | 透過 Secrets Manager 注入 |
-| `ALLOW_CUSTOM_RESEARCH_API_URL` | 是否允許瀏覽器改寫 API 網址 | `false` |
+| `ALLOW_CUSTOM_RESEARCH_API_URL` | 是否允許瀏覽器改寫 API 網址 | `true` |
 
 在 Elastic Beanstalk 可至「設定 → 更新、監控和記錄 → 執行階段環境變數」設定。金鑰請使用 Secrets Manager，不要寫進程式碼或 `.env` 後提交。
 
