@@ -1141,6 +1141,7 @@
                 : (readStoredValue(activeCaseStorageKey) || '');
             let apiCasesCache = [];
             let serverResearchConfig = {};
+            const historicalSimilarityRequests = new Map();
             researchQuestion.value = defaultResearchQuestion;
 
             const loadApiSettings = () => {
@@ -1868,7 +1869,94 @@
                 });
             };
 
-            const loadIssueHistoricalSimilarity = async (issue, legalSources, lawCategory, container) => {
+            const stableTextHash = value => {
+                let hash = 2166136261;
+                const text = String(value || '');
+                for (let index = 0; index < text.length; index += 1) {
+                    hash ^= text.charCodeAt(index);
+                    hash = Math.imul(hash, 16777619);
+                }
+                return (hash >>> 0).toString(36);
+            };
+
+            const getAnalysisSimilaritySignature = result => stableTextHash(JSON.stringify({
+                issues: (Array.isArray(result?.issues) ? result.issues : []).map(issue => ({
+                    title: issue.title,
+                    claimant: issue.claimant_position || issue.claim,
+                    agency: issue.agency_position,
+                    conclusion: issue.conclusion,
+                    laws: issue.related_law_source_ids || issue.related_law_ids || issue.legal_source_ids
+                })),
+                sources: (Array.isArray(result?.sources) ? result.sources : []).map(source => ({
+                    id: source.source_id || source.id,
+                    name: source.law_name || source.name || source.title,
+                    article: source.article_no
+                }))
+            }));
+
+            const compactHistoricalSimilarityResult = result => ({
+                label: result?.label || 'AWS 語意 RAG',
+                candidate_chunks: Number(result?.candidate_chunks || 0),
+                indexed_vectors: Number(result?.indexed_vectors || 0),
+                law_category: result?.law_category || '',
+                matches: (Array.isArray(result?.matches) ? result.matches : []).map(match => ({
+                    document_id: match.document_id,
+                    display_name: match.display_name,
+                    year: match.year,
+                    law_category: match.law_category,
+                    outcome: match.outcome,
+                    score: match.score,
+                    semantic_score: match.semantic_score,
+                    keyword_score: match.keyword_score,
+                    matched_excerpt: match.matched_excerpt,
+                    reason: match.reason,
+                    reader_url: match.reader_url
+                }))
+            });
+
+            const renderIssueHistoricalSimilarity = (container, lawCategory, record) => {
+                const status = container.querySelector('.issue-historical-status');
+                const list = container.querySelector('.issue-historical-list');
+                list.replaceChildren();
+                if (record?.error) {
+                    status.textContent = `本次分析的歷史比對失敗：${record.error}；再次按「開始分析」時會重試。`;
+                    return;
+                }
+                const result = record?.result || {};
+                const matches = Array.isArray(result.matches) ? result.matches : [];
+                if (!matches.length) {
+                    status.textContent = '本次分析沒有找到可對照的歷史理由段落；結果已保存。';
+                    return;
+                }
+                status.textContent = `AWS 語意 RAG：僅檢索「${lawCategory}」；本次結果已保存，切換步驟不會重新搜尋。`;
+                matches.forEach(match => {
+                    const row = document.createElement('div');
+                    row.className = 'issue-historical-match';
+                    const copy = document.createElement('div');
+                    const title = document.createElement('strong');
+                    title.textContent = `綜合相似度 ${Math.round(Number(match.score || 0) * 100)}%・${match.display_name || '歷史決定書'}`;
+                    const excerpt = document.createElement('p');
+                    excerpt.textContent = match.matched_excerpt || match.reason || '未取得可顯示原文。';
+                    copy.append(title, excerpt);
+                    const open = document.createElement('button');
+                    open.type = 'button';
+                    open.className = 'issue-historical-action';
+                    open.textContent = '查看原文';
+                    open.disabled = !match.reader_url;
+                    open.addEventListener('click', () => window.location.assign(match.reader_url));
+                    row.append(copy, open);
+                    list.append(row);
+                });
+            };
+
+            const loadIssueHistoricalSimilarity = async (
+                issue,
+                legalSources,
+                lawCategory,
+                container,
+                analysisFile,
+                issueIndex
+            ) => {
                 const queryText = [
                     issue.title,
                     issue.claimant_position || issue.claim,
@@ -1877,7 +1965,6 @@
                     ...legalSources.map(formatSourceLabel)
                 ].filter(Boolean).join('\n').trim();
                 const status = container.querySelector('.issue-historical-status');
-                const list = container.querySelector('.issue-historical-list');
                 if (queryText.length < 6) {
                     status.textContent = '此爭點缺少足夠文字，暫不比對歷史案例。';
                     return;
@@ -1886,44 +1973,64 @@
                     ? `正在以 AWS Bedrock 於「${lawCategory}」歷史案件中進行語意比對…`
                     : '尚未辨識本爭點的法規，暫不混入其他法律案件。';
                 if (!lawCategory) return;
+
+                const currentAnalysisSignature = getAnalysisSimilaritySignature(analysisFile?.analysisResult);
+                if (!analysisFile?.historicalSimilarityAnalysisKey
+                    || analysisFile.historicalSimilarityAnalysisKey !== currentAnalysisSignature) {
+                    status.textContent = '此分析尚未建立相似案例快取；請按「開始分析」後執行一次語意檢索。';
+                    return;
+                }
+
+                const cacheKey = [
+                    currentAnalysisSignature,
+                    issueIndex,
+                    stableTextHash(`${lawCategory}\n${queryText}`)
+                ].join(':');
+                const cache = analysisFile.issueHistoricalSimilarityCache
+                    || (analysisFile.issueHistoricalSimilarityCache = {});
+                if (cache[cacheKey]) {
+                    renderIssueHistoricalSimilarity(container, lawCategory, cache[cacheKey]);
+                    return;
+                }
+
+                const requestKey = `${analysisFile.caseId || analysisFile.id}:${cacheKey}`;
                 try {
-                    const response = await fetch('/api/historical-similarity/search', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            query_text: queryText,
-                            law_category: lawCategory,
-                            top_k: 2
-                        })
-                    });
-                    const result = await response.json().catch(() => ({}));
-                    if (!response.ok) throw new Error(result.error || `HTTP ${response.status}`);
-                    if (!container.isConnected) return;
-                    const matches = Array.isArray(result.matches) ? result.matches : [];
-                    if (!matches.length) {
-                        status.textContent = '沒有找到可對照的歷史理由段落。';
-                        return;
+                    let pendingRequest = historicalSimilarityRequests.get(requestKey);
+                    if (!pendingRequest) {
+                        pendingRequest = (async () => {
+                            const response = await fetch('/api/historical-similarity/search', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({
+                                    query_text: queryText,
+                                    law_category: lawCategory,
+                                    top_k: 2
+                                })
+                            });
+                            const result = await response.json().catch(() => ({}));
+                            if (!response.ok) throw new Error(result.error || `HTTP ${response.status}`);
+                            return {
+                                result: compactHistoricalSimilarityResult(result),
+                                searchedAt: new Date().toISOString()
+                            };
+                        })();
+                        historicalSimilarityRequests.set(requestKey, pendingRequest);
                     }
-                    status.textContent = `AWS 語意 RAG：僅檢索「${lawCategory}」，並保留可追溯的理由原文。`;
-                    matches.forEach(match => {
-                        const row = document.createElement('div');
-                        row.className = 'issue-historical-match';
-                        const copy = document.createElement('div');
-                        const title = document.createElement('strong');
-                        title.textContent = `綜合相似度 ${Math.round(Number(match.score || 0) * 100)}%・${match.display_name || '歷史決定書'}`;
-                        const excerpt = document.createElement('p');
-                        excerpt.textContent = match.matched_excerpt || match.reason || '未取得可顯示原文。';
-                        copy.append(title, excerpt);
-                        const open = document.createElement('button');
-                        open.type = 'button';
-                        open.className = 'issue-historical-action';
-                        open.textContent = '查看原文';
-                        open.addEventListener('click', () => window.location.assign(match.reader_url));
-                        row.append(copy, open);
-                        list.append(row);
-                    });
+                    const record = await pendingRequest;
+                    cache[cacheKey] = record;
+                    saveQueue();
+                    if (!container.isConnected) return;
+                    renderIssueHistoricalSimilarity(container, lawCategory, record);
                 } catch (error) {
-                    if (container.isConnected) status.textContent = `歷史比對失敗：${error.message}`;
+                    const record = {
+                        error: error.message,
+                        searchedAt: new Date().toISOString()
+                    };
+                    cache[cacheKey] = record;
+                    saveQueue();
+                    if (container.isConnected) renderIssueHistoricalSimilarity(container, lawCategory, record);
+                } finally {
+                    historicalSimilarityRequests.delete(requestKey);
                 }
             };
 
@@ -2094,7 +2201,14 @@
                     historical.append(historicalHeading, historicalStatus, historicalList);
                     card.append(historical);
                     const historicalLawFilter = getHistoricalLawFilter(legalSources, legalCandidates);
-                    loadIssueHistoricalSimilarity(issue, legalSources, historicalLawFilter, historical);
+                    loadIssueHistoricalSimilarity(
+                        issue,
+                        legalSources,
+                        historicalLawFilter,
+                        historical,
+                        analysisFile,
+                        index
+                    );
                     if (!legalSources.length && !supportingEvidence.length && !counterEvidence.length) {
                         const empty = document.createElement('p');
                         empty.className = 'issue-law-empty';
@@ -2329,6 +2443,9 @@
 
             const saveAnalysisResult = (file, result) => {
                 file.analysisResult = result;
+                file.historicalSimilarityAnalysisKey = getAnalysisSimilaritySignature(result);
+                file.issueHistoricalSimilarityCache = {};
+                file.overallHistoricalSimilarityCache = null;
                 persistentStorage.setItem('case-analysis-last-result', JSON.stringify({
                     caseId: file.caseId,
                     name: file.name,
