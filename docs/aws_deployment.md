@@ -19,7 +19,8 @@ App Runner 不在可用服務清單，因此不採用。S3、DynamoDB、S3 Vecto
 - `Procfile`：以 Gunicorn 在 8000 埠啟動
 - `requirements.txt`：AWS 網頁所需的精簡套件
 - `.ebignore`：排除 2 GB 以上的 `.venv`、測試與本機產物
-- `.platform/nginx/conf.d/legal-demo.conf`：允許 50 MB PDF 與較長分析時間
+- `.platform/hooks/predeploy/10_mount_efs.sh`：部署時以 TLS 自動掛載 EFS
+- `.ebextensions/01-efs-environment.config`：設定 EFS ID、掛載路徑與程式資料根目錄
 
 ## AWS 建立順序
 
@@ -27,12 +28,14 @@ App Runner 不在可用服務清單，因此不採用。S3、DynamoDB、S3 Vecto
 2. 建立 VPC 或使用活動提供的既有 VPC。
 3. 建立 EFS，並在 Elastic Beanstalk 使用的每個子網建立 mount target。
 4. EFS security group 開放 TCP 2049，但來源只允許 Elastic Beanstalk EC2 的 security group。
-5. 將 EFS 掛載到 `/mnt/efs`，建立 `/mnt/efs/legal-demo`。
+5. 專案部署時會將 EFS 根目錄掛載到 `/mnt/efs/legal-demo`，不需要登入 EC2 手動掛載。
 6. 建立 Secrets Manager secrets：`legal-demo/research-access-code`、`legal-demo/gemini-api-key`。
 7. 建立 Elastic Beanstalk Python 環境。Demo 可先使用 Single instance。
 8. 將環境的健康檢查路徑設為 `/health`。
-9. 設定下列環境變數：
+9. EFS 相關環境變數已由 `.ebextensions/01-efs-environment.config` 設定；其餘設定如下：
 
+   - `EFS_FILE_SYSTEM_ID=fs-0fe868cb4981cfd1b`
+   - `EFS_MOUNT_DIRECTORY=/mnt/efs/legal-demo`
    - `PERSISTENT_DATA_ROOT=/mnt/efs/legal-demo`
    - `RESEARCH_API_BASE_URL=https://temporal-law-api-867487539733.asia-east1.run.app`
    - `ALLOW_CUSTOM_RESEARCH_API_URL=false`
@@ -69,6 +72,27 @@ eb open
 ```
 
 沒有設定時仍使用專案內原本的資料夾，因此本機啟動方式不變。
+
+## EFS 自動掛載
+
+目前專案使用既有 EFS `fs-0fe868cb4981cfd1b`。Elastic Beanstalk 每次部署新版本時會：
+
+1. 安裝 Amazon Linux 2023 的 `amazon-efs-utils`。
+2. 將 EFS 根目錄以 TLS 掛載到 `/mnt/efs/legal-demo`。
+3. 將 `_netdev,tls` 掛載設定寫入 `/etc/fstab`，讓 EC2 重開機後重新掛載。
+4. 建立 `uploads/`、`case_uploads/` 與 `data/processed/json_web_uploads/`。
+5. 將資料夾擁有者設為 Elastic Beanstalk 的 `webapp` 使用者。
+
+部署前必須確認 EFS mount target 使用的 security group 已有以下 inbound rule：
+
+```text
+Type: NFS
+Protocol: TCP
+Port: 2049
+Source: sg-00e2dc86f695d0571
+```
+
+其中來源是目前 `Law-web-env` 的 EC2 security group；請勿將 NFS 開放給 `0.0.0.0/0`。若日後重建 Elastic Beanstalk 環境，EC2 security group 可能改變，屆時要同步更新這條規則。
 
 ## 驗證清單
 
