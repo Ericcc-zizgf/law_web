@@ -18,7 +18,6 @@ App Runner 不在可用服務清單，因此不採用。S3、DynamoDB、S3 Vecto
 - `application.py`：Elastic Beanstalk WSGI 入口
 - `Procfile`：以 Gunicorn 在 8000 埠啟動
 - `requirements.txt`：AWS 網頁所需的精簡套件
-- `requirements-rag.txt`：僅供 Apple Silicon 本機 RAG／MLX 工具
 - `.ebignore`：排除 2 GB 以上的 `.venv`、測試與本機產物
 - `.platform/nginx/conf.d/legal-demo.conf`：允許 50 MB PDF 與較長分析時間
 
@@ -86,4 +85,4 @@ eb open
 
 ## 正式版後續
 
-Demo 穩定後可將 PDF／TXT／JSON 從 EFS 改存 S3，metadata 改存 DynamoDB，相似案例向量改存 S3 Vectors。這些服務都在目前允許清單內。
+Demo 穩定後可將 PDF／TXT／JSON 從 EFS 改存 S3，metadata 改存 DynamoDB；歷史案例比對則應由研究 API 或獨立的雲端檢索服務處理。這些改造不納入目前的 Demo 部署。

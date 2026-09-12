@@ -20,7 +20,6 @@ WEB_JSON_OUTPUT_DIR = (
 REPORT_DIR = DATA_DIR / "processed" / "reports"
 NOTEBOOK_OUTPUT_DIR = DATA_DIR / "processed" / "notebook"
 LEGACY_JSON_OUTPUT_DIR = DATA_DIR / "processed" / "json_legacy_model"
-VECTOR_DB_DIR = DATA_DIR / "vector_db" / "chroma_legal_db"
 UPLOAD_DIR = PERSISTENT_DATA_ROOT / "uploads"
 # 第二步待審訴願案件的檔案區，與第一步歷史資料庫完全分開。
 CASE_UPLOAD_DIR = PERSISTENT_DATA_ROOT / "case_uploads"

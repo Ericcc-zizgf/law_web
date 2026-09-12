@@ -10,7 +10,6 @@ from legal_tool.processing.txt_to_json import (
     extract_metadata,
     split_hierarchical_sections,
 )
-from legal_tool.rag.rag_mlx import load_json_chunks
 from legal_tool.services.library_ingestion import (
     HISTORICAL_APPEAL_CATEGORY,
     extract_case_law_category,
@@ -156,24 +155,6 @@ class LibraryIngestionTests(unittest.TestCase):
         self.assertIsNone(sections[0]["編號"])
         self.assertEqual(sections[0]["名稱"], "事實概述")
         self.assertEqual(sections[1]["編號"], "一")
-
-    def test_rag_uses_clean_display_name_instead_of_uuid_or_copy_suffix(self):
-        with tempfile.TemporaryDirectory() as temporary_directory:
-            json_path = Path(temporary_directory) / "abc123.json"
-            json_path.write_text(
-                """{
-                  "metadata": {
-                    "原始檔名": "測試.pdf 的副本.pdf",
-                    "顯示檔名": "測試.pdf"
-                  },
-                  "案號": "1130000001",
-                  "理由": [{"編號": "一、", "層級": 1, "內容": "測試理由。", "子段落": []}]
-                }""",
-                encoding="utf-8",
-            )
-
-            chunks = load_json_chunks(temporary_directory)
-            self.assertEqual(chunks[0]["source_file"], "測試.pdf")
 
     def test_convert_api_returns_readable_nested_json_url(self):
         with tempfile.TemporaryDirectory() as temporary_directory:

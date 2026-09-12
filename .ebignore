@@ -16,7 +16,6 @@ data/processed/notebook/
 data/processed/json_legacy_model/
 data/processed/reports/
 data/processed/text/
-data/vector_db/
 
 # 上傳資料改由 EFS 保存，不隨程式版本部署
 uploads/
