@@ -546,20 +546,6 @@
         }
         .analysis-card h3 { margin: 14px 0 8px; color: var(--navy); font-size: 17px; }
         .analysis-card p { margin: 0; color: #87949c; font-size: 14px; line-height: 1.6; }
-        .historical-similarity { margin-top: 20px; padding-top: 20px; border-top: 1px solid var(--line); }
-        .historical-similarity-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; }
-        .historical-similarity-heading h3 { margin: 0; color: var(--navy); font-size: 17px; }
-        .historical-similarity-heading p { margin: 5px 0 0; color: var(--muted); font-size: 12px; line-height: 1.55; }
-        .historical-similarity-list { display: grid; gap: 10px; margin-top: 13px; }
-        .historical-similarity-empty { margin: 0; padding: 12px; border: 1px dashed #d8e3e2; border-radius: 9px; color: #89979e; font-size: 12px; }
-        .historical-match { padding: 14px 16px; border: 1px solid #d7e6e2; border-radius: 11px; background: #fbfdfc; }
-        .historical-match-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
-        .historical-match h4 { margin: 0; color: var(--ink); font-size: 15px; line-height: 1.5; }
-        .historical-match-meta { margin: 4px 0 0; color: #7d8d96; font-size: 11px; }
-        .historical-score { flex: 0 0 auto; padding: 5px 8px; border-radius: 99px; color: #176c63; background: #e5f3ef; font-size: 11px; font-weight: 800; white-space: nowrap; }
-        .historical-match-copy { margin: 9px 0 0; color: #5f707a; font-size: 12px; line-height: 1.7; }
-        .historical-match-reason { margin: 8px 0 0; color: #74848d; font-size: 11px; line-height: 1.6; }
-        .historical-match-actions { display: flex; justify-content: flex-end; margin-top: 11px; }
         .issue-law-map { margin-top: 20px; padding-top: 20px; border-top: 1px solid var(--line); }
         .issue-law-map[hidden] { display: none; }
         .issue-law-map-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
@@ -888,17 +874,6 @@
                 <article class="analysis-card"><span>爭議主張</span><h3 id="analysisClaimTitle">等待案件資料</h3><p id="analysisClaimText">選取案件後，這裡會準備主要爭議點的分析工作。</p></article>
                 <article class="analysis-card"><span>相關法規</span><h3 id="analysisLawTitle">等待案件資料</h3><p id="analysisLawText">選取案件後，這裡會準備法規辨識與歷史案例比對。</p></article>
             </div>
-            <section class="historical-similarity" aria-label="歷史相似案例">
-                <div class="historical-similarity-heading">
-                    <div>
-                        <h3>歷史相似案例</h3>
-                        <p>以 AWS Bedrock 理解爭點語意，僅在同法律類別的歷史決定書中搜尋；可開啟命中原文並反白。</p>
-                    </div>
-                    <button class="research-tool-button primary" id="searchHistoricalSimilarity" type="button">搜尋歷史案例</button>
-                </div>
-                <p class="historical-similarity-empty" id="historicalSimilarityStatus">選取已完成分析與文字擷取的案件後，即可開始 AWS 語意搜尋。</p>
-                <div class="historical-similarity-list" id="historicalSimilarityList"></div>
-            </section>
             <section class="case-research-query" aria-label="案件研究問題">
                 <div class="case-research-query-heading">
                     <h3>研究問題</h3>
@@ -1057,9 +1032,6 @@
             const analysisClaimText = document.getElementById('analysisClaimText');
             const analysisLawTitle = document.getElementById('analysisLawTitle');
             const analysisLawText = document.getElementById('analysisLawText');
-            const searchHistoricalSimilarityButton = document.getElementById('searchHistoricalSimilarity');
-            const historicalSimilarityStatus = document.getElementById('historicalSimilarityStatus');
-            const historicalSimilarityList = document.getElementById('historicalSimilarityList');
             const issueLawMap = document.getElementById('issueLawMap');
             const issueLawList = document.getElementById('issueLawList');
             const issueFilterStatus = document.getElementById('issueFilterStatus');
@@ -2282,118 +2254,9 @@
                 });
             };
 
-            const getCaseTextName = file => {
-                const explicitName = String(file?.txtName || '');
-                if (/^[0-9a-f]{32}\.txt$/i.test(explicitName)) return explicitName;
-                const matched = String(file?.pdfUrl || '').match(/\/case-uploads\/([0-9a-f]{32})\.pdf$/i);
-                return matched ? `${matched[1]}.txt` : '';
-            };
-
-            const getIssueSimilarityQuery = file => Array.isArray(file?.analysisResult?.issues)
-                ? file.analysisResult.issues.map(issue => [
-                    issue.title,
-                    issue.claimant_position || issue.claim,
-                    issue.agency_position,
-                    issue.conclusion
-                ].filter(Boolean).join(' ')).join('\n').trim()
-                : '';
-
-            const showHistoricalSimilarityStatus = message => {
-                historicalSimilarityStatus.textContent = message;
-                historicalSimilarityStatus.hidden = false;
-            };
-
-            const renderHistoricalSimilarity = result => {
-                historicalSimilarityList.replaceChildren();
-                const matches = Array.isArray(result?.matches) ? result.matches : [];
-                if (!matches.length) {
-                    showHistoricalSimilarityStatus('目前沒有找到可比較的歷史理由段落；可先增加歷史決定書資料，或確認待審案件 PDF 有可讀文字。');
-                    return;
-                }
-                historicalSimilarityStatus.hidden = false;
-                historicalSimilarityStatus.textContent = `${result.label || 'AWS 語意 RAG'}：同法候選 ${result.candidate_chunks || 0} 個理由段落，EFS 已快取 ${result.indexed_vectors || 0} 筆向量。`;
-                matches.forEach(match => {
-                    const card = document.createElement('article');
-                    card.className = 'historical-match';
-                    const header = document.createElement('div');
-                    header.className = 'historical-match-header';
-                    const heading = document.createElement('div');
-                    const title = document.createElement('h4');
-                    title.textContent = match.display_name || '未命名歷史決定書';
-                    const meta = document.createElement('p');
-                    meta.className = 'historical-match-meta';
-                    meta.textContent = [match.year && `${match.year} 年`, match.law_category, match.outcome].filter(Boolean).join('・') || '歷史訴願決定書';
-                    heading.append(title, meta);
-                    const score = document.createElement('span');
-                    score.className = 'historical-score';
-                    score.textContent = `綜合相似度 ${Math.round(Number(match.score || 0) * 100)}%`;
-                    header.append(heading, score);
-                    const excerpt = document.createElement('p');
-                    excerpt.className = 'historical-match-copy';
-                    excerpt.textContent = `命中原文：${match.matched_excerpt || '未取得原文片段'}`;
-                    const reason = document.createElement('p');
-                    reason.className = 'historical-match-reason';
-                    reason.textContent = match.reason || '依 Bedrock 語意、共同用語與法條進行混合排序。';
-                    const actions = document.createElement('div');
-                    actions.className = 'historical-match-actions';
-                    const open = document.createElement('button');
-                    open.type = 'button';
-                    open.className = 'research-tool-button primary';
-                    open.textContent = '開啟原文並反白';
-                    open.addEventListener('click', () => {
-                        window.location.assign(match.reader_url);
-                    });
-                    actions.append(open);
-                    card.append(header, excerpt, reason, actions);
-                    historicalSimilarityList.append(card);
-                });
-            };
-
-            const searchHistoricalSimilarity = async () => {
-                const file = getActiveQueueFile();
-                const caseTextName = getCaseTextName(file);
-                const issueQuery = getIssueSimilarityQuery(file);
-                const lawCategory = getHistoricalLawFilter(file?.analysisResult?.sources || []);
-                if (!caseTextName && !issueQuery) {
-                    showHistoricalSimilarityStatus('這個案件尚未有可用的本機文字檔；請重新上傳 PDF，完成文字擷取後再搜尋。');
-                    return;
-                }
-                searchHistoricalSimilarityButton.disabled = true;
-                historicalSimilarityList.replaceChildren();
-                if (!lawCategory) {
-                    showHistoricalSimilarityStatus('尚未辨識主要法律類別；請先按「開始分析」，取得相關法規後再搜尋。');
-                    searchHistoricalSimilarityButton.disabled = false;
-                    return;
-                }
-                showHistoricalSimilarityStatus(`正在以 AWS Bedrock 搜尋「${lawCategory}」歷史決定書；第一次會建立 EFS 向量索引…`);
-                try {
-                    const response = await fetch('/api/historical-similarity/search', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify(
-                            issueQuery
-                                ? { query_text: issueQuery, law_category: lawCategory, top_k: 5 }
-                                : { case_txt_name: caseTextName, law_category: lawCategory, top_k: 5 }
-                        )
-                    });
-                    const result = await response.json().catch(() => ({}));
-                    if (!response.ok) throw new Error(result.error || `HTTP ${response.status}`);
-                    renderHistoricalSimilarity(result);
-                } catch (error) {
-                    showHistoricalSimilarityStatus(`歷史案例搜尋失敗：${error.message}`);
-                } finally {
-                    searchHistoricalSimilarityButton.disabled = !(
-                        getCaseTextName(getActiveQueueFile()) || getIssueSimilarityQuery(getActiveQueueFile())
-                    );
-                }
-            };
-
             const renderAnalysis = file => {
                 if (!file) {
                     runAnalysisButton.disabled = true;
-                    searchHistoricalSimilarityButton.disabled = true;
-                    historicalSimilarityList.replaceChildren();
-                    showHistoricalSimilarityStatus('選取已完成分析與文字擷取的案件後，即可開始 AWS 語意搜尋。');
                     analysisStatus.textContent = '尚未選取案件';
                     analysisStatus.className = 'status-chip';
                     analysisCaseName.textContent = '等待選取案件';
@@ -2408,14 +2271,6 @@
                 }
 
                 runAnalysisButton.disabled = !file.caseId;
-                const hasSimilarityQuery = Boolean(getCaseTextName(file) || getIssueSimilarityQuery(file));
-                searchHistoricalSimilarityButton.disabled = !hasSimilarityQuery;
-                if (!hasSimilarityQuery) {
-                    historicalSimilarityList.replaceChildren();
-                    showHistoricalSimilarityStatus('這個案件尚未有可用的本機文字檔；請重新上傳 PDF，完成文字擷取後再搜尋。');
-                } else if (!historicalSimilarityList.childElementCount) {
-                    showHistoricalSimilarityStatus('可開始搜尋：系統會使用 AWS Bedrock，並只比對同法律類別的歷史理由。');
-                }
                 analysisStatus.textContent = file.caseId ? '案件已選取' : '等待 API 案件編號';
                 analysisStatus.className = `status-chip${file.caseId ? ' is-complete' : ''}`;
                 analysisCaseName.textContent = file.name;
@@ -2445,7 +2300,6 @@
                 file.analysisResult = result;
                 file.historicalSimilarityAnalysisKey = getAnalysisSimilaritySignature(result);
                 file.issueHistoricalSimilarityCache = {};
-                file.overallHistoricalSimilarityCache = null;
                 persistentStorage.setItem('case-analysis-last-result', JSON.stringify({
                     caseId: file.caseId,
                     name: file.name,
@@ -2510,7 +2364,6 @@
             };
 
             runAnalysisButton.addEventListener('click', analyzeSelectedCase);
-            searchHistoricalSimilarityButton.addEventListener('click', searchHistoricalSimilarity);
 
             const selectCase = file => {
                 if ((!file.pdfUrl && !file.caseId) || file.error) return;
