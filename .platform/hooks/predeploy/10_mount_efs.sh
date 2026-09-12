@@ -54,6 +54,7 @@ PERSISTENT_DIRECTORIES=(
     "${EFS_MOUNT_DIRECTORY}/uploads"
     "${EFS_MOUNT_DIRECTORY}/case_uploads"
     "${EFS_MOUNT_DIRECTORY}/data/processed/json_web_uploads"
+    "${EFS_MOUNT_DIRECTORY}/data/processed/rag_index"
 )
 
 install -d -m 2775 "${EFS_MOUNT_DIRECTORY}" "${PERSISTENT_DIRECTORIES[@]}"

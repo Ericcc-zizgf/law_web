@@ -7,6 +7,7 @@
 - Elastic Beanstalk：執行 Flask／Gunicorn
 - EC2：由 Elastic Beanstalk 管理執行個體
 - EFS：保存第一步與第二步上傳檔案
+- Amazon Bedrock：以 Titan Text Embeddings V2 建立中文法律段落向量
 - Secrets Manager 或 SSM Parameter Store：保存研究 API 存取碼與 Gemini API Key
 - CloudWatch Logs：保存應用程式與錯誤紀錄
 - ACM：自訂網域時提供 HTTPS 憑證
@@ -21,6 +22,7 @@ App Runner 不在可用服務清單，因此不採用。S3、DynamoDB、S3 Vecto
 - `.ebignore`：排除 2 GB 以上的 `.venv`、測試與本機產物
 - `.platform/hooks/predeploy/10_mount_efs.sh`：部署時以 TLS 自動掛載 EFS
 - `.ebextensions/01-efs-environment.config`：設定 EFS ID、掛載路徑與程式資料根目錄
+- `.ebextensions/02-rag-environment.config`：設定 Bedrock embedding 與同法篩選
 
 ## AWS 建立順序
 
@@ -68,7 +70,8 @@ eb open
 /mnt/efs/legal-demo/
 ├── uploads/
 ├── case_uploads/
-└── data/processed/json_web_uploads/
+├── data/processed/json_web_uploads/
+└── data/processed/rag_index/             # 可由歷史 JSON 重建的向量快取
 ```
 
 沒有設定時仍使用專案內原本的資料夾，因此本機啟動方式不變。
@@ -94,11 +97,39 @@ Source: sg-00e2dc86f695d0571
 
 其中來源是目前 `Law-web-env` 的 EC2 security group；請勿將 NFS 開放給 `0.0.0.0/0`。若日後重建 Elastic Beanstalk 環境，EC2 security group 可能改變，屆時要同步更新這條規則。
 
+## AWS 語意 RAG
+
+目前使用 Amazon Bedrock 的 Titan Text Embeddings V2（`amazon.titan-embed-text-v2:0`，1024 維）。歷史決定書依「理由」段落建立向量，向量索引保存在 EFS；查詢時先強制篩選同法律類別，再以語意 75%、BM25 關鍵字 20%、共同法條 5% 進行混合排序。
+
+將下列 inline policy 加到 Elastic Beanstalk EC2 instance profile 使用的角色 `aws-elasticbeanstalk-ec2-role`。這是執行網站的角色，不是 CodePipeline service role：
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "InvokeTitanEmbeddingForLegalRag",
+      "Effect": "Allow",
+      "Action": "bedrock:InvokeModel",
+      "Resource": "arn:aws:bedrock:us-east-1::foundation-model/amazon.titan-embed-text-v2:0"
+    }
+  ]
+}
+```
+
+部署後可先檢查設定：
+
+```text
+GET /api/historical-similarity/status?probe=1
+```
+
+第一次搜尋某一法律類別時會呼叫 Bedrock 建立缺少的歷史段落向量，因此時間較長；向量寫入 EFS 後，後續搜尋只需建立查詢向量。搜尋結果會回傳歷史文件 ID、理由段落路徑、逐字命中內容及閱讀器網址，前端可回到原 PDF 並反白。
+
 ## 驗證清單
 
 1. `GET /health` 回傳 `{"status":"ok"}`。
 2. 首頁、第一步、第二步、第三步都能開啟。
-3. 第一部上傳 PDF 後能產生 TXT 與 JSON。
+3. 第一步上傳 PDF 後能產生 TXT 與 JSON。
 4. 重新啟動環境後，第一步資料仍存在。
 5. 第二步能建立 case_id、補充卷證並執行分析。
 6. 重新整理後能還原案件與本 Session 歷次研究。
@@ -106,7 +137,9 @@ Source: sg-00e2dc86f695d0571
 8. 瀏覽器開發者工具中沒有伺服器端 Gemini API Key。
 9. 任意研究 API 網址不能覆蓋伺服器設定。
 10. CloudWatch Logs 沒有 4xx／5xx 或 Gunicorn timeout。
+11. `/api/historical-similarity/status?probe=1` 顯示 `ready: true`。
+12. 第二步完成案件分析後可執行同法語意搜尋，並從結果返回歷史 PDF 原文。
 
 ## 正式版後續
 
-Demo 穩定後可將 PDF／TXT／JSON 從 EFS 改存 S3，metadata 改存 DynamoDB；歷史案例比對則應由研究 API 或獨立的雲端檢索服務處理。這些改造不納入目前的 Demo 部署。
+Demo 穩定、歷史理由段落成長到 EFS 線性掃描不再合適時，可將 PDF／TXT／JSON 改存 S3、metadata 改存 DynamoDB，並把目前的 EFS 向量快取介面換成 S3 Vectors。這些擴充不影響文件 ID 與返回原文網址。

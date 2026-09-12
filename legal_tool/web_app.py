@@ -2,7 +2,7 @@ import json
 import os
 import re
 from pathlib import Path
-from urllib.parse import urlsplit
+from urllib.parse import urlencode, urlsplit
 
 import requests
 from flask import Flask, Response, jsonify, render_template_string, request, send_from_directory, stream_with_context
@@ -11,6 +11,7 @@ from flask_cors import CORS
 from legal_tool.config import (
     CASE_UPLOAD_DIR,
     FRONTEND_PAGES_DIR,
+    RAG_INDEX_DIR,
     WEB_JSON_OUTPUT_DIR,
     PROJECT_ROOT,
     UPLOAD_DIR,
@@ -22,6 +23,16 @@ from legal_tool.services.library_ingestion import (
     LIBRARY_CATEGORIES,
     ingest_library_pdf,
     list_historical_documents,
+)
+from legal_tool.services.historical_similarity import (
+    load_historical_chunks,
+    search_historical_chunks,
+    search_semantic_historical_chunks,
+)
+from legal_tool.services.semantic_rag import (
+    SemanticRagError,
+    embedding_client_from_environment,
+    semantic_index_status,
 )
 
 BASE_DIR = PROJECT_ROOT
@@ -50,6 +61,16 @@ ALLOW_CUSTOM_RESEARCH_API_URL = os.environ.get(
 ).strip().lower() in {"1", "true", "yes", "on"}
 RESEARCH_ACCESS_CODE = os.environ.get("RESEARCH_ACCESS_CODE", "").strip()
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "").strip()
+RAG_ENABLED = os.environ.get("RAG_ENABLED", "true").strip().lower() in {
+    "1", "true", "yes", "on",
+}
+RAG_REQUIRE_LAW_FILTER = os.environ.get(
+    "RAG_REQUIRE_LAW_FILTER", "true"
+).strip().lower() in {"1", "true", "yes", "on"}
+try:
+    RAG_MIN_SCORE = max(0.0, min(1.0, float(os.environ.get("RAG_MIN_SCORE", "0.35"))))
+except ValueError:
+    RAG_MIN_SCORE = 0.35
 
 
 @app.get("/")
@@ -692,6 +713,130 @@ def convert_case_pdf():
     return jsonify(
         message=f"已完成 {len(converted_files)} 份待審訴願書 PDF 擷取",
         files=converted_files,
+    )
+
+
+@app.post("/api/historical-similarity/search")
+def search_historical_similarity():
+    """以待審案件文字對歷史理由進行可追溯的 AWS 語意 RAG。"""
+    payload = request.get_json(silent=True) or {}
+    query = str(payload.get("query_text") or "").strip()
+    case_txt_name = str(payload.get("case_txt_name") or "").strip()
+    if query:
+        # 爭議點比對只需要 API 摘要，不接受無上限的請求內容。
+        query = query[:12000]
+    else:
+        if not re.fullmatch(r"[0-9a-f]{32}\.txt", case_txt_name):
+            return jsonify(error="待審案件文字檔識別碼無效"), 400
+        case_txt_path = CASE_UPLOAD_FOLDER / case_txt_name
+        if not case_txt_path.is_file():
+            return jsonify(error="找不到待審案件的文字檔，請重新上傳該案件"), 404
+        try:
+            query = case_txt_path.read_text(encoding="utf-8").strip()
+        except OSError as error:
+            return jsonify(error=f"待審案件文字檔無法讀取：{error}"), 500
+    if not query:
+        return jsonify(error="沒有可比對的案件或爭議點文字"), 422
+
+    try:
+        top_k = int(payload.get("top_k", 5))
+    except (TypeError, ValueError):
+        return jsonify(error="搜尋結果數量格式無效"), 400
+
+    chunks = load_historical_chunks(JSON_OUTPUT_DIR)
+    law_category = str(payload.get("law_category") or "").strip()
+    year = str(payload.get("year") or "").strip()
+    retrieval_mode = str(payload.get("retrieval_mode") or "semantic").strip().lower()
+    index_stats = {"indexed_vectors": 0, "candidate_chunks": 0, "new_vectors": 0}
+
+    if retrieval_mode == "keyword":
+        matches = search_historical_chunks(
+            query,
+            chunks,
+            top_k=top_k,
+            law_category=law_category,
+            year=year,
+        )
+        label = "關鍵字關聯度（診斷模式）"
+        score_type = "keyword_bm25_relevance"
+        embedding_provider = None
+        embedding_model = None
+    else:
+        if not RAG_ENABLED:
+            return jsonify(error="AWS 語意 RAG 尚未啟用"), 503
+        if RAG_REQUIRE_LAW_FILTER and not law_category:
+            return jsonify(
+                error="尚未辨識主要法律類別，請先完成案件分析後再執行同法語意搜尋"
+            ), 422
+        try:
+            embedding_client = embedding_client_from_environment()
+            matches, index_stats = search_semantic_historical_chunks(
+                query,
+                chunks,
+                index_dir=RAG_INDEX_DIR,
+                embedding_client=embedding_client,
+                top_k=top_k,
+                law_category=law_category,
+                year=year,
+                minimum_score=RAG_MIN_SCORE,
+            )
+        except (SemanticRagError, ValueError, OSError) as error:
+            app.logger.exception("AWS semantic RAG failed")
+            return jsonify(error=str(error), retrieval_mode="semantic"), 503
+        label = "AWS 語意 RAG"
+        score_type = "hybrid_bedrock_titan_bm25"
+        embedding_provider = embedding_client.provider
+        embedding_model = embedding_client.model_id
+
+    for match in matches:
+        document_id = match["document_id"]
+        match["pdf_url"] = f"/uploads/{document_id}.pdf"
+        match["json_url"] = f"/api/documents/{document_id}/json"
+        match["reader_url"] = "/data-library?" + urlencode({
+            "document_id": document_id,
+            "focus_text": match["focus_text"],
+            "focus_issue": "相似理由",
+            "focus_exact": "0",
+        })
+
+    return jsonify(
+        label=label,
+        retrieval_mode=retrieval_mode,
+        score_type=score_type,
+        embedding_provider=embedding_provider,
+        embedding_model=embedding_model,
+        indexed_documents=len({chunk["document_id"] for chunk in chunks}),
+        indexed_chunks=len(chunks),
+        indexed_vectors=index_stats.get("indexed_vectors", 0),
+        candidate_chunks=index_stats.get("candidate_chunks", 0),
+        new_vectors=index_stats.get("new_vectors", 0),
+        law_category=law_category,
+        minimum_score=RAG_MIN_SCORE if retrieval_mode != "keyword" else None,
+        query_mode="issue_summary" if payload.get("query_text") else "case_text",
+        matches=matches,
+    )
+
+
+@app.get("/api/historical-similarity/status")
+def historical_similarity_status():
+    """回傳 RAG 索引狀態；加上 probe=1 時才實際測試 Bedrock。"""
+    try:
+        embedding_client = embedding_client_from_environment()
+        status = semantic_index_status(RAG_INDEX_DIR, embedding_client)
+        should_probe = request.args.get("probe", "").strip().lower() in {
+            "1", "true", "yes", "on",
+        }
+        if should_probe and RAG_ENABLED:
+            embedding_client.embed("繁體中文法律語意檢索連線測試")
+    except (SemanticRagError, ValueError, OSError) as error:
+        return jsonify(enabled=RAG_ENABLED, ready=False, error=str(error)), 503
+    return jsonify(
+        enabled=RAG_ENABLED,
+        configured=RAG_ENABLED,
+        ready=True if should_probe and RAG_ENABLED else None,
+        probe_performed=should_probe and RAG_ENABLED,
+        require_law_filter=RAG_REQUIRE_LAW_FILTER,
+        **status,
     )
 
 

@@ -17,6 +17,7 @@ JSON_OUTPUT_DIR = DATA_DIR / "processed" / "json"
 WEB_JSON_OUTPUT_DIR = (
     PERSISTENT_DATA_ROOT / "data" / "processed" / "json_web_uploads"
 )
+RAG_INDEX_DIR = PERSISTENT_DATA_ROOT / "data" / "processed" / "rag_index"
 REPORT_DIR = DATA_DIR / "processed" / "reports"
 NOTEBOOK_OUTPUT_DIR = DATA_DIR / "processed" / "notebook"
 LEGACY_JSON_OUTPUT_DIR = DATA_DIR / "processed" / "json_legacy_model"

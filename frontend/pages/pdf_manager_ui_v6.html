@@ -1758,6 +1758,17 @@
         let categoryChartEntries = [];
         let categoryChartTotal = 0;
         let pendingFocusRequest = null;
+        let pendingHistoricalDocumentId = isCaseNoteMode ? '' : (pageParams.get('document_id') || '');
+
+        // 歷史案例檢索會帶著這些參數回到第一步閱讀器；PDF.js 載入後再嘗試反白原文。
+        if (!isCaseNoteMode && pageParams.get('focus_text')) {
+            pendingFocusRequest = {
+                text: pageParams.get('focus_text'),
+                exact: pageParams.get('focus_exact') === '1',
+                issue: pageParams.get('focus_issue') || '',
+                page: pageParams.get('focus_page') || ''
+            };
+        }
 
         const uploadCopyByCategory = {
             '司法院釋字及行政判解': {
@@ -1883,6 +1894,13 @@
                 refreshYearSelect();
                 refreshLawSelect();
                 updateDisplays();
+                if (pendingHistoricalDocumentId) {
+                    const requestedFile = uploadedFiles.find(
+                        file => file.documentId === pendingHistoricalDocumentId
+                    );
+                    pendingHistoricalDocumentId = '';
+                    if (requestedFile) openReader(requestedFile);
+                }
             } catch (error) {
                 console.error('歷史資料庫同步失敗:', error);
             }

@@ -37,7 +37,7 @@ EFS：保存歷史資料、待審案件 PDF、TXT 與第一步 JSON
 Secrets Manager：保存研究 API 存取碼與 Gemini API Key
 ```
 
-歷史案例「相似案件比對」尚未實作為網站功能。未來應由研究 API 或獨立的雲端檢索服務提供，而不是在 Elastic Beanstalk 上執行本機 MLX 模型。
+歷史案例比對已接入 AWS Bedrock Titan Text Embeddings V2：第二步會先依主要法律強制篩選歷史案件，再以語意向量、BM25 關鍵字與共同法條進行混合排序。向量索引快取在 EFS；結果會回傳相似度、比對理由、命中的歷史原文與閱讀連結，點擊後可回到原始歷史 PDF 並嘗試反白對應段落。BM25 單獨搜尋只保留為診斷模式，不是正式流程。
 
 ## 第一步 PDF → TXT 詳細處理架構
 
@@ -179,6 +179,12 @@ PORT=5050 ./.venv/bin/python app.py
 | 名稱 | 用途 | AWS 建議設定 |
 |---|---|---|
 | `PERSISTENT_DATA_ROOT` | 上傳檔案與第一步 JSON 的保存根目錄 | `/mnt/efs/legal-demo` |
+| `RAG_ENABLED` | 是否啟用 AWS 語意 RAG | `true` |
+| `RAG_AWS_REGION` | Bedrock Runtime 區域 | `us-east-1` |
+| `RAG_EMBEDDING_MODEL_ID` | Bedrock embedding 模型 | `amazon.titan-embed-text-v2:0` |
+| `RAG_EMBEDDING_DIMENSIONS` | embedding 維度 | `1024` |
+| `RAG_REQUIRE_LAW_FILTER` | 是否強制只搜尋同法律類別 | `true` |
+| `RAG_MIN_SCORE` | 低於此綜合相似度的結果不顯示 | `0.35` |
 | `RESEARCH_API_BASE_URL` | 研究 API 的基礎網址 | 你的研究 API 網址 |
 | `RESEARCH_ACCESS_CODE` | 研究 API 存取碼 | 透過 Secrets Manager 注入 |
 | `GEMINI_API_KEY` | 研究 API 所需的 Gemini 金鑰 | 透過 Secrets Manager 注入 |
@@ -192,6 +198,7 @@ PORT=5050 ./.venv/bin/python app.py
 
 - **Elastic Beanstalk**：執行 Flask／Gunicorn。
 - **EFS**：保存使用者上傳檔案，避免環境重新部署後消失。
+- **Amazon Bedrock**：以 Titan Text Embeddings V2 產生歷史理由與當前爭點的語意向量。
 - **CodePipeline**：GitHub `main` 分支推送後自動部署。
 - **Secrets Manager**：保存 API 存取碼與金鑰。
 
@@ -205,7 +212,7 @@ PORT=5050 ./.venv/bin/python app.py
 ./.venv/bin/python -m unittest tests.test_library_ingestion -v
 ```
 
-測試包含 PDF／TXT／JSON 建立、階層段落解析、檔名清理、重複檔案檢查及第一步 API。
+測試包含 PDF／TXT／JSON 建立、階層段落解析、檔名清理、重複檔案檢查、第一步 API 與歷史理由段落檢索。
 
 ## 批次轉換工具
 
@@ -225,5 +232,5 @@ PORT=5050 ./.venv/bin/python app.py
 ## 開發範圍與下一步
 
 - 目前網站的爭點、法規、卷證與草案功能以研究 API 回傳資料為準。
-- 歷史訴願決定書已能結構化保存與閱讀，但尚未接入自動相似案例搜尋。
-- 若要實作相似案例搜尋，建議先與研究 API 定義「建立索引」與「查詢相似案例」兩個端點，再由第二步顯示可追溯的案例來源與原文段落。
+- 第二步的「歷史相似案例」目前是本機 BM25 文字關聯檢索，資料來源是 EFS／本機保存的歷史 JSON 與待審案件 TXT，不依賴研究 API。
+- 若改為語意 RAG，建議保留 `/api/historical-similarity/search` 的回傳格式，僅將其內部檢索替換為 AWS 向量服務，並維持 `document_id`、`focus_text`、`reason` 與 `score`，才能繼續支援 PDF 原文反白與可追溯性。
