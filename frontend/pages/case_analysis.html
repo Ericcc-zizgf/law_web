@@ -489,40 +489,6 @@
             white-space: nowrap;
         }
         .queue-file-meta { margin-top: 4px; color: #819099; font-size: 12px; }
-        .queue-support-actions {
-            display: flex;
-            align-items: center;
-            gap: 7px;
-            margin-top: 9px;
-        }
-        .queue-support-role {
-            min-width: 0;
-            max-width: 180px;
-            padding: 5px 7px;
-            border: 1px solid var(--line);
-            border-radius: 7px;
-            color: var(--muted);
-            background: #fff;
-            font: inherit;
-            font-size: 11px;
-        }
-        .queue-support-button {
-            display: inline-flex;
-            align-items: center;
-            min-height: 28px;
-            padding: 5px 8px;
-            border: 1px solid #b9d1cb;
-            border-radius: 7px;
-            color: var(--teal);
-            background: #f4fbf8;
-            cursor: pointer;
-            font-size: 11px;
-            font-weight: 750;
-            white-space: nowrap;
-        }
-        .queue-support-button:hover,
-        .queue-support-button:focus-within { border-color: var(--teal); color: #fff; background: var(--teal); outline: none; }
-        .queue-support-input { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); clip-path: inset(50%); }
         .queue-file-remove {
             margin-top: 8px;
             padding: 4px 8px;
@@ -791,8 +757,6 @@
             .dropzone,
             .queue-scroll { margin-left: 18px; margin-right: 18px; }
             .queue-item { grid-template-columns: 36px minmax(0, 1fr); }
-            .queue-support-actions { align-items: stretch; flex-wrap: wrap; }
-            .queue-support-role { max-width: none; flex: 1 1 170px; }
             .api-settings-grid { grid-template-columns: 1fr; }
             .research-tool-form { grid-template-columns: 1fr; }
             .case-research-options { grid-template-columns: 1fr; }
@@ -844,7 +808,7 @@
                 <div class="panel-heading">
                     <div>
                         <h2>批次上傳待審訴願書</h2>
-                        <p>先上傳訴願書建立案件；原行政處分書與其他卷證可在案件卡片中補充。</p>
+                        <p>先上傳訴願書建立案件；其他卷證請使用下方的案件卷證批次補充功能上傳。</p>
                     </div>
                 </div>
                 <div class="dropzone" id="caseDropZone">
@@ -962,7 +926,7 @@
         <section class="panel research-tools" aria-label="研究 API 延伸功能">
             <div class="section-heading">
                 <div>
-                    <h2>案件研究工具</h2>
+                    <h2>此次案件研究工具</h2>
                     <p>接合研究 API 的案件 Session、研究紀錄、法條沿革與 Agent 稽核功能。</p>
                 </div>
             </div>
@@ -1116,13 +1080,6 @@
                 evidence: '請依本案目前全部卷證重新分析各爭點，逐項比較訴願人與原處分機關的證據，標示已有支持、反向證據、證據不一致與證據不足，並列出仍需補充的文件。',
                 draft: '請依本案卷證、主要爭議點與經官方覆核的相關法規，生成一份可供承辦人校閱的訴願決定書草案，保留引用依據；資料不足處請明確標示待人工確認。'
             };
-            const supportRoles = [
-                { value: 'appeal_petition', label: '訴願書（主文件・訴願人方）' },
-                { value: 'appellant_evidence', label: '訴願人補充證據（訴願人方）' },
-                { value: 'administrative_disposition', label: '原行政處分書（附件一・原處分機關方）' },
-                { value: 'disposition_evidence', label: '原處分機關卷內證據（原處分機關方）' },
-                { value: 'other_note', label: '其他附註文件（未標明立場）' }
-            ];
             let progressTimer = null;
             let queueSequence = 0;
             let queuedFiles = [];
@@ -2211,10 +2168,9 @@
                     item.className = `queue-item${isReady ? ' is-ready' : ''}${isActive ? ' is-selected' : ''}`;
                     if (isReady && !file.error) {
                         item.addEventListener('click', event => {
-                            // 卡片本身可點擊選取案件，但卷證下拉選單、檔案選擇與刪除勾選不能觸發卡片重繪。
+                            // 卡片本身可點擊選取案件；PDF 按鈕與刪除勾選不觸發卡片重繪。
                             if (
                                 event.target.closest('.queue-file-icon')
-                                || event.target.closest('.queue-support-actions')
                                 || event.target.closest('.queue-file-select')
                             ) return;
                             selectCase(file);
@@ -2274,35 +2230,6 @@
                     content.append(selectLabel);
                     content.append(copy);
 
-                    if (file.caseId && !file.error) {
-                        const supportActions = document.createElement('div');
-                        supportActions.className = 'queue-support-actions';
-                        const roleSelect = document.createElement('select');
-                        roleSelect.className = 'queue-support-role';
-                        roleSelect.setAttribute('aria-label', `選擇 ${file.name} 的補充卷證類型`);
-                        supportRoles.forEach(role => {
-                            const option = document.createElement('option');
-                            option.value = role.value;
-                            option.textContent = role.label;
-                            roleSelect.append(option);
-                        });
-                        const supportLabel = document.createElement('label');
-                        supportLabel.className = 'queue-support-button';
-                        supportLabel.textContent = '新增卷證';
-                        const supportInput = document.createElement('input');
-                        supportInput.className = 'queue-support-input';
-                        supportInput.type = 'file';
-                        supportInput.multiple = true;
-                        supportInput.accept = '.pdf,.doc,.docx,.rtf,.odt,.txt,.md,.csv,.json';
-                        supportInput.setAttribute('aria-label', `上傳 ${file.name} 的補充卷證`);
-                        supportInput.addEventListener('change', event => {
-                            uploadSupportingDocuments(file, event.target.files, roleSelect.value);
-                        });
-                        supportLabel.append(supportInput);
-                        supportActions.append(roleSelect, supportLabel);
-                        content.append(supportActions);
-                    }
-
                     item.append(icon, content);
                     queueList.append(item);
                 });
@@ -2360,35 +2287,6 @@
                     isError ? '上傳失敗' : `${queuedFiles.length} 件待分析`,
                     isError ? 'error' : 'complete'
                 );
-            };
-
-            const uploadSupportingDocuments = async (caseFile, selectedFiles, role) => {
-                const files = Array.from(selectedFiles || []);
-                if (!files.length || !caseFile.caseId) return;
-
-                caseFile.status = `正在上傳 ${files.length} 份補充卷證…`;
-                renderQueue();
-                try {
-                    const uploadedDocuments = [];
-                    for (const file of files) {
-                        const result = await apiClient.uploadDocument({ file, role, caseId: caseFile.caseId });
-                        if (result.document) uploadedDocuments.push(result.document);
-                    }
-                    try {
-                        const latest = await apiClient.listCaseDocuments(caseFile.caseId);
-                        caseFile.documents = latest.documents || uploadedDocuments;
-                    } catch (_error) {
-                        caseFile.documents = [...(caseFile.documents || []), ...uploadedDocuments];
-                    }
-                    caseFile.status = `已上傳訴願書與 ${caseFile.documents.length} 份卷證`;
-                    caseFile.error = false;
-                    saveQueue();
-                    renderQueue();
-                } catch (error) {
-                    caseFile.status = `補充卷證失敗：${error.message}`;
-                    caseFile.error = false;
-                    renderQueue();
-                }
             };
 
             const deleteSelectedQueueFiles = () => {
