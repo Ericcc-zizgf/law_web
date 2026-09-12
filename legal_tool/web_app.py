@@ -471,18 +471,68 @@ def render_placeholder_page(active_step: int, step: str, title: str, description
               let activeCaseId = stored.caseId || readStoredValue('case-analysis-active-id') || '';
               let activeCase = null;
               let reviewCases = [];
+              let latestRunRequestId = 0;
 
               const readReviewCases = () => {
                 try {
                   const parsed = JSON.parse(readStoredValue('case-analysis-queue') || '[]');
-                  return Array.isArray(parsed) ? parsed.filter(file => file && file.name) : [];
+                  const cases = Array.isArray(parsed) ? parsed.filter(file => file && file.name) : [];
+                  if (stored.caseId && !cases.some(file => file.caseId === stored.caseId)) {
+                    cases.unshift({
+                      id: `api-${stored.caseId}`,
+                      caseId: stored.caseId,
+                      name: stored.name || '未命名訴願案件',
+                      size: stored.size || 0,
+                      status: '已從最後分析結果還原',
+                      documents: [],
+                      analysisResult: stored.result || null,
+                      pdfUrl: ''
+                    });
+                  }
+                  return cases;
                 } catch (_error) {
                   return [];
                 }
               };
 
+              const getDecisionDraftText = data => {
+                const nested = data && typeof data.result === 'object' ? data.result : {};
+                const candidates = [
+                  data?.decision_draft,
+                  data?.decision,
+                  data?.draft,
+                  data?.recommendation,
+                  nested?.decision_draft,
+                  nested?.decision,
+                  nested?.draft,
+                  nested?.recommendation
+                ];
+                return String(candidates.find(value => String(value || '').trim()) || '').trim();
+              };
+
+              const normalizeRecommendationResult = (data, allowAnswerFallback = false) => {
+                const explicitDraft = getDecisionDraftText(data);
+                const answerFallback = allowAnswerFallback ? String(data?.answer || '').trim() : '';
+                const decisionDraft = explicitDraft || answerFallback;
+                return decisionDraft ? { ...data, decision_draft: decisionDraft } : data;
+              };
+
+              const persistReviewResult = (file, result) => {
+                if (!file || !result) return;
+                file.analysisResult = result;
+                const caseId = file.caseId || file.id || activeCaseId;
+                stored = {
+                  caseId,
+                  name: file.name,
+                  size: file.size,
+                  result
+                };
+                localStorage.setItem('case-analysis-last-result', JSON.stringify(stored));
+                localStorage.setItem('case-analysis-queue', JSON.stringify(reviewCases));
+              };
+
               const showResult = data => {
-                const text = String(data.decision_draft || data.decision || '').trim();
+                const text = getDecisionDraftText(data);
                 draft.textContent = text;
                 draft.hidden = !text;
                 draftEmpty.hidden = Boolean(text);
@@ -491,6 +541,7 @@ def render_placeholder_page(active_step: int, step: str, title: str, description
                 reviewDirection.textContent = issues.length ? issues.map(item => item.title).slice(0, 2).join('；') : 'API 未回傳爭議點摘要';
                 reviewReasons.textContent = text ? '已取得判決書草案，請承辦人逐段校閱' : 'API 尚未回傳判決書草案';
                 reviewSources.textContent = sources.length ? `${sources.length} 筆卷內或官方參考依據` : 'API 未回傳參考依據';
+                return Boolean(text);
               };
 
               const clearReviewPreview = () => {
@@ -502,13 +553,39 @@ def render_placeholder_page(active_step: int, step: str, title: str, description
                 reviewSources.textContent = '等待產生可追溯來源';
               };
 
+              const restoreLatestRecommendation = async file => {
+                if (!file?.caseId) return;
+                const requestId = ++latestRunRequestId;
+                try {
+                  const data = await api.listCaseRuns(file.caseId, 30);
+                  const runs = Array.isArray(data.runs) ? data.runs : [];
+                  const draftRun = runs.find(run => run.run_id && /(?:草案|判決建議|決定書)/.test(run.question || ''));
+                  const latestRun = draftRun || runs.find(run => run.run_id);
+                  if (!latestRun?.run_id) return;
+                  const run = await api.getAgentRun(latestRun.run_id);
+                  if (requestId !== latestRunRequestId || activeCaseId !== file.caseId || !run.result) return;
+                  const isDraftRun = /(?:草案|判決建議|決定書)/.test(run.question || latestRun.question || '');
+                  const normalizedResult = normalizeRecommendationResult(run.result, isDraftRun);
+                  if (!getDecisionDraftText(normalizedResult)) return;
+                  persistReviewResult(file, normalizedResult);
+                  showResult(normalizedResult);
+                  renderReviewQueue();
+                  status.textContent = '已從 API 還原最新判決建議';
+                  status.className = 'status-chip is-complete';
+                } catch (_error) {
+                  // API 暫時無法讀取時，繼續使用瀏覽器中已保存的草案。
+                }
+              };
+
               const selectReviewCase = file => {
                 activeCase = file;
                 activeCaseId = file.caseId || file.id || '';
                 if (activeCaseId) localStorage.setItem('case-analysis-active-id', activeCaseId);
-                const selectedResult = file.analysisResult || (
+                const latestStoredResult = (
                   stored.caseId && stored.caseId === file.caseId ? stored.result : null
                 );
+                const selectedResult = latestStoredResult || file.analysisResult;
+                if (selectedResult) file.analysisResult = selectedResult;
                 stored = {
                   caseId: activeCaseId,
                   name: file.name,
@@ -517,11 +594,13 @@ def render_placeholder_page(active_step: int, step: str, title: str, description
                 };
                 caseEmpty.hidden = true;
                 generate.disabled = !file.caseId;
-                status.textContent = selectedResult ? '已完成第二步分析' : (file.caseId ? '可生成判決建議' : '等待 API 案件編號');
+                const hasDraft = Boolean(selectedResult && getDecisionDraftText(selectedResult));
+                status.textContent = hasDraft ? '判決建議已生成' : (selectedResult ? '已完成第二步分析' : (file.caseId ? '可生成判決建議' : '等待 API 案件編號'));
                 status.className = `status-chip${selectedResult || file.caseId ? ' is-complete' : ''}`;
                 if (selectedResult) showResult(selectedResult);
                 else clearReviewPreview();
                 renderReviewQueue();
+                restoreLatestRecommendation(file);
               };
 
               const renderReviewQueue = () => {
@@ -596,11 +675,16 @@ def render_placeholder_page(active_step: int, step: str, title: str, description
                       if (event === 'step') status.textContent = data.step?.decision || data.step?.name || 'API 生成中…';
                     }
                   });
-                  const nextPayload = { ...stored, caseId: activeCase.caseId, name: activeCase.name, result: nextResult };
-                  localStorage.setItem('case-analysis-last-result', JSON.stringify(nextPayload));
-                  stored = nextPayload;
-                  showResult(nextResult);
-                  status.textContent = '判決建議已生成';
+                  const normalizedResult = normalizeRecommendationResult(nextResult, true);
+                  persistReviewResult(activeCase, normalizedResult);
+                  renderReviewQueue();
+                  const hasDraft = showResult(normalizedResult);
+                  if (!hasDraft) {
+                    status.textContent = 'API 分析完成，但沒有回傳可顯示的草案內容';
+                    status.className = 'status-chip is-error';
+                    return;
+                  }
+                  status.textContent = '判決建議已生成並保存';
                   status.className = 'status-chip is-complete';
                 } catch (error) {
                   status.textContent = `生成失敗：${error.message}`;
