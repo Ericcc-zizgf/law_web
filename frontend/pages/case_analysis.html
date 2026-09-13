@@ -572,6 +572,13 @@
         .issue-law-copy { margin: 8px 0 0; color: #657580; font-size: 13px; line-height: 1.65; }
         .issue-law-copy strong { color: #435664; }
         .issue-law-conclusion { margin: 8px 0 0; color: var(--muted); font-size: 12px; line-height: 1.6; }
+        .issue-temporal-bases { margin-top: 11px; padding: 10px 12px; border: 1px solid #d8e8e4; border-radius: 9px; background: #f2f8f6; }
+        .issue-temporal-label { display: block; margin-bottom: 6px; color: #315d57; font-size: 11px; font-weight: 800; }
+        .issue-temporal-list { display: grid; gap: 6px; }
+        .issue-temporal-basis { display: flex; flex-wrap: wrap; align-items: baseline; gap: 5px; color: #5f7079; font-size: 12px; line-height: 1.55; }
+        .issue-temporal-basis time { color: var(--ink); font-weight: 800; }
+        .issue-temporal-role { padding: 1px 7px; border-radius: 99px; color: #19796f; background: #deefe9; font-size: 10px; font-weight: 800; }
+        .issue-temporal-reason::before { content: "— "; color: #91a19f; }
         .issue-law-group { margin-top: 11px; }
         .issue-law-group-label { display: block; margin-bottom: 5px; color: #819099; font-size: 11px; font-weight: 800; }
         .issue-law-sources { display: flex; flex-wrap: wrap; gap: 6px; }
@@ -2080,6 +2087,51 @@
                     .filter(Boolean);
                 const sourceKey = source => source.source_id || source.id || source.url || source.name;
                 const dedupeSources = items => [...new Map(items.map(source => [sourceKey(source), source])).values()];
+                const dateRoleLabels = {
+                    occurrence: '行為／違規發生',
+                    inspection: '稽查／採樣',
+                    disposition: '原處分',
+                    service: '送達',
+                    appeal_filing: '訴願提出',
+                    current: '現行法',
+                    unresolved: '日期待確認',
+                    other: '其他事件'
+                };
+                const renderTemporalBases = (card, bases) => {
+                    if (!Array.isArray(bases) || !bases.length) return;
+                    const validBases = bases.filter(basis => basis && (basis.as_of || basis.date || basis.reason));
+                    if (!validBases.length) return;
+                    const block = document.createElement('section');
+                    block.className = 'issue-temporal-bases';
+                    const label = document.createElement('strong');
+                    label.className = 'issue-temporal-label';
+                    label.textContent = '本爭點日期基準';
+                    const list = document.createElement('div');
+                    list.className = 'issue-temporal-list';
+                    validBases.forEach(basis => {
+                        const row = document.createElement('div');
+                        row.className = 'issue-temporal-basis';
+                        const date = document.createElement('time');
+                        const dateValue = basis.as_of || basis.date || '日期待確認';
+                        date.textContent = dateValue;
+                        if (/^\d{4}-\d{2}-\d{2}$/.test(dateValue)) date.dateTime = dateValue;
+                        const role = document.createElement('span');
+                        role.className = 'issue-temporal-role';
+                        role.textContent = dateRoleLabels[basis.date_role]
+                            || basis.date_role
+                            || '研究目標指定';
+                        row.append(date, role);
+                        if (basis.reason) {
+                            const reason = document.createElement('span');
+                            reason.className = 'issue-temporal-reason';
+                            reason.textContent = basis.reason;
+                            row.append(reason);
+                        }
+                        list.append(row);
+                    });
+                    block.append(label, list);
+                    card.append(block);
+                };
                 const isLegalSource = source => {
                     const evidenceType = String(source.evidence_type || source.type || '').toLowerCase();
                     const sourceName = String(source.name || source.title || '');
@@ -2175,6 +2227,7 @@
                         header.append(finding);
                     }
                     card.append(header);
+                    renderTemporalBases(card, issue.temporal_bases);
 
                     const addCopy = (label, value) => {
                         if (!value) return;
