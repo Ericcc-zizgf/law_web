@@ -140,6 +140,26 @@ GET /api/historical-similarity/status?probe=1
 11. `/api/historical-similarity/status?probe=1` 顯示 `ready: true`。
 12. 第二步完成案件分析後可執行同法語意搜尋，並從結果返回歷史 PDF 原文。
 
+## 活動場地 IP 限制
+
+AWS 部署包會透過 `ALLOWED_CLIENT_IPS` 啟用應用程式層 allowlist，目前允許：
+
+```text
+60.250.71.45/32
+61.222.117.53/32
+59.125.121.41/32
+60.250.71.43/32
+```
+
+`/health` 不受此限制，讓 Elastic Beanstalk 或 Load Balancer 能持續進行健康檢查。本機未設定 `ALLOWED_CLIENT_IPS` 時不限制來源，避免影響 `127.0.0.1` 開發。
+
+應用程式層限制只能回傳 HTTP 403，正式封鎖仍應在 AWS Security Group 設定：
+
+1. 若環境有 Load Balancer，在 Load Balancer security group 的 HTTP／HTTPS inbound rules 加入上述四個 `/32`，移除 `0.0.0.0/0`。
+2. 若環境是 Single instance，改在 Elastic Beanstalk EC2 security group 設定上述規則。
+3. 若使用 Load Balancer，EC2 security group 的 HTTP inbound source 應設為 Load Balancer security group，而不是四個公開 IP。
+4. 不要修改 EFS 的 NFS 2049 規則；EFS 仍只允許 Elastic Beanstalk EC2 security group。
+
 ## 正式版後續
 
 Demo 穩定、歷史理由段落成長到 EFS 線性掃描不再合適時，可將 PDF／TXT／JSON 改存 S3、metadata 改存 DynamoDB，並把目前的 EFS 向量快取介面換成 S3 Vectors。這些擴充不影響文件 ID 與返回原文網址。

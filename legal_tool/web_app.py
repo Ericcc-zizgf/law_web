@@ -1,6 +1,7 @@
 import json
 import os
 import re
+from ipaddress import ip_address, ip_network
 from pathlib import Path
 from urllib.parse import urlencode, urlsplit
 
@@ -71,6 +72,65 @@ try:
     RAG_MIN_SCORE = max(0.0, min(1.0, float(os.environ.get("RAG_MIN_SCORE", "0.35"))))
 except ValueError:
     RAG_MIN_SCORE = 0.35
+
+
+def parse_client_ip_allowlist(value: str):
+    """將逗號或空白分隔的 IP/CIDR 設定轉成可比對的網路清單。"""
+    networks = []
+    for entry in re.split(r"[,\s]+", str(value or "").strip()):
+        if not entry:
+            continue
+        try:
+            networks.append(ip_network(entry, strict=False))
+        except ValueError as error:
+            raise RuntimeError(f"ALLOWED_CLIENT_IPS 含有無效 IP 或 CIDR：{entry}") from error
+    return tuple(networks)
+
+
+ALLOWED_CLIENT_NETWORKS = parse_client_ip_allowlist(
+    os.environ.get("ALLOWED_CLIENT_IPS", "")
+)
+
+
+def request_client_ip():
+    """取得經 AWS 代理鏈送來的最右側公開用戶端 IP。"""
+    forwarded_values = request.headers.get("X-Forwarded-For", "").split(",")
+    for value in reversed(forwarded_values):
+        try:
+            candidate = ip_address(value.strip())
+        except ValueError:
+            continue
+        if candidate.is_global:
+            return candidate
+
+    try:
+        return ip_address(request.remote_addr or "")
+    except ValueError:
+        return None
+
+
+@app.before_request
+def enforce_client_ip_allowlist():
+    """AWS 啟用 allowlist 後，只讓指定來源 IP 使用網站與 API。"""
+    if not ALLOWED_CLIENT_NETWORKS or request.path == "/health":
+        return None
+
+    client_ip = request_client_ip()
+    if client_ip and any(client_ip in network for network in ALLOWED_CLIENT_NETWORKS):
+        return None
+
+    if request.path.startswith("/api/") or request.path in {"/convert", "/convert-case"}:
+        return jsonify(error="此服務僅允許指定網路 IP 使用"), 403
+    return Response(
+        (
+            "<!doctype html><html lang=\"zh-Hant\"><meta charset=\"utf-8\">"
+            "<title>無法存取</title><body style=\"font-family:sans-serif;padding:40px\">"
+            "<h1>此網路位置無法使用本系統</h1>"
+            "<p>請連接主辦單位允許的網路後再重新整理。</p></body></html>"
+        ),
+        status=403,
+        content_type="text/html; charset=utf-8",
+    )
 
 
 @app.get("/")
